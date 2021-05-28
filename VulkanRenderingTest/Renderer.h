@@ -2,6 +2,7 @@
 #include <vulkan/vulkan.h>
 #include <cinttypes>
 #include <iostream>
+#include <vector>
 #include <GLFW/glfw3.h>
 
 enum class DebugPrintFlags : uint32_t
@@ -12,10 +13,33 @@ enum class DebugPrintFlags : uint32_t
 	ERROR = 4096
 };
 
+enum class QueueType
+{
+    QUEUE_TYPE_GRAPHICS = 0,
+	QUEUE_TYPE_COMPUTE = 1,
+	QUEUE_TYPE_TRANSFER = 2
+};
+
 inline DebugPrintFlags operator | (const DebugPrintFlags& a_Lhs, const DebugPrintFlags& a_Rhs)
 {
 	return static_cast<DebugPrintFlags>(static_cast<uint32_t>(a_Lhs) | static_cast<uint32_t>(a_Rhs));
 }
+
+struct RendererSettings
+{
+	//Set to true to enable debug callbacks and validation layers.
+	bool enableDebugMode = true;
+
+	//Bit combined flags determining which messages get printed when debugging is enabled.
+	DebugPrintFlags debugFlags = DebugPrintFlags::ERROR | DebugPrintFlags::WARNING;
+
+	//The index of the physical graphics device to use.
+	std::uint32_t gpuIndex = 0;		
+
+	//Window and swapchain resolution.
+	std::uint32_t windowWidth = 512;
+	std::uint32_t windowHeight = 512;
+};
 
 class Renderer
 {
@@ -25,7 +49,7 @@ public:
 	/*
 	 * Initialize systems.
 	 */
-	bool Init(const std::uint32_t a_Width, const std::uint32_t a_Height, const bool a_EnableDebugValidation, const DebugPrintFlags a_DebugFlags);
+	bool Init(const RendererSettings& a_Settings);
 
 	/*
 	 * Run for your life!
@@ -36,12 +60,12 @@ private:
 	/*
 	 * Initialize Vulkan context and enable debug layers if specified.
 	 */
-	bool InitVulkan(const std::uint32_t a_Width, const std::uint32_t a_Height, const bool a_EnableDebugValidation, const DebugPrintFlags a_DebugFlags);
+	bool InitVulkan();
 
 	/*
 	 * Select a GPU and initialize queues. 
 	 */
-	bool InitDevice(const bool a_EnableDebugValidation);
+	bool InitDevice();
 
 	/*
 	 * Initialize the Vulkan swapchain.
@@ -68,7 +92,7 @@ private:
 	VkPhysicalDevice m_PhysicalDevice;		//Physical GPU device.
 	VkDevice m_Device;						//Logical device wrapping around physical GPU.
 	VkSurfaceKHR m_Surface;					//The output surface. In this case provided by GLFW.
-	VkQueue m_Queue;						//The logical queue that is backed by the hardware selected.
+	VkQueue m_Queues[3];					//One queue of each type.
 	VkSwapchainKHR m_SwapChain;				//The swapchain for the GLFW window.
 
 	/*
@@ -79,4 +103,5 @@ private:
 	/*
 	 * Other objects.
 	 */
+	RendererSettings m_Settings;
 };

@@ -7,9 +7,12 @@
  */
 int main()
 {
+    RendererSettings settings;
+    settings.debugFlags = DebugPrintFlags::ERROR;
+
     auto renderer = std::make_unique<Renderer>();
 
-    if(renderer->Init(512, 512, true, DebugPrintFlags::ERROR))  //This is a bit flag, can do DebugPrintFlags::ERROR | DebugPrintFlags::WARNING etc.
+    if(renderer->Init(settings))  //This is a bit flag, can do DebugPrintFlags::ERROR | DebugPrintFlags::WARNING etc.
     {
         renderer->Run();
     }
