@@ -161,9 +161,11 @@
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="Renderer.cpp" />
+    <ClCompile Include="vk_mem_alloc.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Renderer.h" />
+    <ClInclude Include="vk_mem_alloc.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

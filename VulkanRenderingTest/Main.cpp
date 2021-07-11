@@ -14,11 +14,26 @@ int main()
 
     if(renderer->Init(settings))  //This is a bit flag, can do DebugPrintFlags::ERROR | DebugPrintFlags::WARNING etc.
     {
+        std::vector<Vertex> vertices{ Vertex{glm::vec3{0.f, 0.f, 0.f}, glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}}};
+        std::vector<uint32_t> indices{1, 2, 3, 4, 5, 6, 22, 1};
+        auto mesh = renderer->CreateMesh(vertices, indices);
         renderer->Run();
     }
     else
     {
         printf("Could not init renderer.\n");
+    }
+
+    printf("Done running renderer.\n");
+
+    //Delete all allocated objects.
+    if(renderer->CleanUp())
+    {
+        printf("Renderer succesfully cleaned up!\n");
+    }
+    else
+    {
+        printf("Could not clean up renderer properly!\n");
     }
 
     printf("Program execution finished.\nPress any key to continue.\n");
