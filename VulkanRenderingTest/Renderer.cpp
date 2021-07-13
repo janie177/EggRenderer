@@ -123,8 +123,11 @@ Renderer::Renderer() :
             m_VulkanInstance(nullptr),
             m_PhysicalDevice(nullptr),
             m_Device(nullptr),
-            m_Surface(nullptr), m_Queues{},
+            m_Surface(nullptr),
+            m_Queues{},
             m_SwapChain(nullptr),
+            m_CopyBuffer(nullptr),
+            m_CopyCommandPool(nullptr),
             m_Allocator(nullptr)
 {
 }

@@ -8,6 +8,8 @@
 
 #include "vk_mem_alloc.h"
 
+#define NUM_FRAMES 2
+
 enum class DebugPrintFlags : uint32_t
 {
 	VERBOSE = 1,
@@ -36,6 +38,17 @@ struct QueueInfo
 	VkQueue m_Queue;				//The queue handle.
 	std::uint32_t m_FamilyIndex;	//The queue family index.
 	std::uint32_t m_QueueIndex;		//The queue index within the family.
+};
+
+/*
+ * Struct containing all the resources needed for a single frame.
+ */
+struct Frame
+{
+	VkFence m_Fence;					//The fence used to signal when the frame has completed.
+	VkSemaphore m_Semaphore;			//The semaphore used to signal the swapchain presentation.
+	VkCommandBuffer m_CommandBuffer;	//The graphics command buffer used for drawing and presenting.
+	VkCommandPool m_CommandPool;		//The command pool used to allocate commands for this frame.
 };
 
 struct RendererSettings
@@ -184,6 +197,11 @@ private:
 
 	VmaAllocator m_Allocator;				//External library handling memory management to keep this project a bit cleaner.
 
+
+	Frame m_FrameData[NUM_FRAMES];			//Resources for each frame.
+	VkPipeline m_Pipeline;					//The pipeline containing all state used for rendering.
+	VkShaderModule m_VertexShader;			//The vertex shader for the graphics pipeline.
+	VkShaderModule m_FragmentShader;		//The fragment shader for the graphics pipeline.
 	/*
 	 * Dynamic Vulkan objects directly related to rendering.
 	 */
