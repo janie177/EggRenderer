@@ -5,10 +5,9 @@
 #include <vector>
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
+#include <fstream>
+#include <filesystem>
 
-#include "vk_mem_alloc.h"
-#include "vk_mem_alloc.h"
-#include "vk_mem_alloc.h"
 #include "vk_mem_alloc.h"
 
 bool Renderer::Init(const RendererSettings& a_Settings)
@@ -72,7 +71,6 @@ bool Renderer::Init(const RendererSettings& a_Settings)
         return false;
     }
 
-
     m_Initialized = true;
 	return true;
 }
@@ -94,6 +92,24 @@ bool Renderer::CleanUp()
     m_Meshes.clear();
 
     //TODO clean up textures, etc.
+
+    //Pipeline related objects.
+    vkDestroyPipeline(m_Device, m_Pipeline, nullptr);
+    vkDestroyRenderPass(m_Device, m_RenderPass, nullptr);
+    vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
+
+    //Destroy the resources per frame.
+    for(auto& frame : m_FrameData)
+    {
+        vkFreeCommandBuffers(m_Device, frame.m_CommandPool, 1, &frame.m_CommandBuffer);
+        vkDestroyCommandPool(m_Device, frame.m_CommandPool, nullptr);
+        vkDestroyFence(m_Device, frame.m_Fence, nullptr);
+        vkDestroySemaphore(m_Device, frame.m_Semaphore, nullptr);
+    }
+
+    //Delete the allocated fragment and vertex shaders.
+    vkDestroyShaderModule(m_Device, m_VertexShader, nullptr);
+    vkDestroyShaderModule(m_Device, m_FragmentShader, nullptr);
 
     //Destroy all allocated memory.
     for(auto& view : m_SwapViews)
@@ -161,6 +177,10 @@ bool Renderer::Run()
 
 std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBuffer, const std::vector<std::uint32_t>& a_IndexBuffer)
 {
+    /*
+     * Note: This function creates a staging buffer and fence, then deletes them again. Re-use would be much better in a real application.
+     */
+
     //Calculate buffer size. Offset to be 16-byte aligned.
     const auto vertexSizeBytes = sizeof(Vertex) * a_VertexBuffer.size();
     const auto indexSizeBytes = sizeof(std::uint32_t) * a_IndexBuffer.size();
@@ -279,7 +299,7 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
     vkDestroyFence(m_Device, uploadFence, nullptr);
 
     //Finally create a shared pointer and return a copy of it after putting it in the registry.
-    const auto ptr = std::make_shared<Mesh>(allocation, buffer, a_IndexBuffer.size(), a_VertexBuffer.size(), indexOffset, vertexOffset);
+    auto ptr = std::make_shared<Mesh>(allocation, buffer, a_IndexBuffer.size(), a_VertexBuffer.size(), indexOffset, vertexOffset);
     m_Meshes.push_back(ptr);
     return ptr;
 }
@@ -591,7 +611,7 @@ bool Renderer::CreateSwapChain()
     //I just force these, and if not supported I can always adjusted.
     VkSurfaceFormatKHR surfaceFormat;
     surfaceFormat.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-    surfaceFormat.format = VK_FORMAT_B8G8R8A8_SRGB;
+    surfaceFormat.format = m_Settings.m_OutputFormat;
 
     //Query the capabilities for the physical device and surface that were created earlier.
     VkSurfaceCapabilitiesKHR surfaceCapabilities;
@@ -705,8 +725,287 @@ bool Renderer::InitPipeline()
     copyCommandBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     vkAllocateCommandBuffers(m_Device, &copyCommandBufferInfo, &m_CopyBuffer);
 
+    /*
+     * Set up the resources for each frame.
+     */
+    for(auto frameIndex = 0; frameIndex < NUM_FRAMES; ++frameIndex)
+    {
+        auto& frameData = m_FrameData[frameIndex];
 
-    //TODO PSO, command buffers and descriptor heaps.
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.queueFamilyIndex = m_Queues[(unsigned)QueueType::QUEUE_TYPE_GRAPHICS].m_FamilyIndex;
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.flags = 0;
+
+        if (vkCreateCommandPool(m_Device, &poolInfo, nullptr, &frameData.m_CommandPool) != VK_SUCCESS)
+        {
+            printf("Could not create graphics command pool for frame index %i!\n", frameIndex);
+            return false;
+        }
+
+        VkCommandBufferAllocateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        bufferInfo.commandBufferCount = 1;
+        bufferInfo.level = VkCommandBufferLevel::VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        bufferInfo.commandPool = frameData.m_CommandPool;
+
+        if (vkAllocateCommandBuffers(m_Device, &bufferInfo, &frameData.m_CommandBuffer) != VK_SUCCESS)
+        {
+            printf("Could not create graphics command buffer for frame index %i!\n", frameIndex);
+            return false;
+        }
+
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = VkFenceCreateFlagBits::VK_FENCE_CREATE_SIGNALED_BIT;  //Signal by default so that the frame is marked as available.
+        if(vkCreateFence(m_Device, &fenceInfo, nullptr, &frameData.m_Fence) != VK_SUCCESS)
+        {
+            printf("Could not create fence for frame index %i!\n", frameIndex);
+            return false;
+        }
+
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        if (vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &frameData.m_Semaphore) != VK_SUCCESS)
+        {
+            printf("Could not create fence for frame index %i!\n", frameIndex);
+            return false;
+        }
+    }
+
+    /*
+     * Load the Spir-V shaders from disk.
+     */
+    const std::string workingDir = std::filesystem::current_path().string();
+
+    if(!CreateShaderModuleFromSpirV(workingDir + "/shaders/output/default.vert.spv", m_VertexShader) || !CreateShaderModuleFromSpirV(workingDir + "/shaders/output/default.frag.spv", m_FragmentShader))
+    {
+        printf("Could not load fragment or vertex shader from Spir-V.\n");
+        return false;
+    }
+
+    /*
+     * Create a graphics pipeline state object.
+     * This object requires all state like blending and shaders used to be bound.
+     */
+
+    //Add the shaders to the pipeline
+    VkPipelineShaderStageCreateInfo vertexStage{};
+    vertexStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertexStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertexStage.module = m_VertexShader;
+    vertexStage.pName = "main";
+    VkPipelineShaderStageCreateInfo fragmentStage{};
+    fragmentStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragmentStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragmentStage.module = m_FragmentShader;
+    fragmentStage.pName = "main";
+    VkPipelineShaderStageCreateInfo shaderStages[] = { vertexStage, fragmentStage };
+
+    //Vertex input
+    VkPipelineVertexInputStateCreateInfo vertexInfo{};
+    vertexInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInfo.vertexBindingDescriptionCount = 0;
+    vertexInfo.vertexAttributeDescriptionCount = 0; //TODO
+    vertexInfo.pVertexBindingDescriptions = nullptr;
+    vertexInfo.pVertexAttributeDescriptions = nullptr;
+
+    //Input assembly state
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;   //TODO: maybe different kinds?
+    inputAssembly.primitiveRestartEnable = false;
+
+    //Viewport
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float)m_Settings.windowWidth;
+    viewport.height = (float)m_Settings.windowHeight;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    VkRect2D scissor{};
+    scissor.offset = { 0, 0 };
+    scissor.extent = VkExtent2D{m_Settings.windowWidth, m_Settings.windowHeight};
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    //Rasterizer state
+    VkPipelineRasterizationStateCreateInfo rasterizationState{};
+    rasterizationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizationState.depthClampEnable = VK_FALSE;         //Clamp instead of discard would be nice for shadow mapping
+    rasterizationState.rasterizerDiscardEnable = VK_FALSE;  //Disables all input, not sure when this would be useful, maybe when switching menus and not rendering the main scene?
+    rasterizationState.polygonMode = VK_POLYGON_MODE_FILL;  //Can draw as lines which is really awesome for debugging and making people think I'm hackerman
+    rasterizationState.lineWidth = 1.0f;                    //Line width in case of hackerman mode
+    rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;    //Same as GL
+    rasterizationState.frontFace = VK_FRONT_FACE_CLOCKWISE; //Same as GL
+    rasterizationState.depthBiasEnable = VK_FALSE;          //Useful for shadow mapping to prevent acne.
+    rasterizationState.depthBiasConstantFactor = 0.0f;      //^    
+    rasterizationState.depthBiasClamp = 0.0f;               //^
+    rasterizationState.depthBiasSlopeFactor = 0.0f;         //^
+
+    //Multi-sampling which nobody really uses anymore anyways. TAA all the way!
+    VkPipelineMultisampleStateCreateInfo multiSampleState{};
+    multiSampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multiSampleState.sampleShadingEnable = VK_FALSE;
+    multiSampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multiSampleState.minSampleShading = 1.0f;
+    multiSampleState.pSampleMask = nullptr;
+    multiSampleState.alphaToCoverageEnable = VK_FALSE;
+    multiSampleState.alphaToOneEnable = VK_FALSE;
+
+    //The depth state. Stencil is not used for now.
+    VkPipelineDepthStencilStateCreateInfo depthStencilState{};
+    depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencilState.depthTestEnable = true;
+    depthStencilState.depthWriteEnable = true;
+    depthStencilState.stencilTestEnable = false;
+    depthStencilState.depthBoundsTestEnable = false;
+
+    //Color blending.
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo colorBlendState{};
+    colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlendState.logicOpEnable = VK_FALSE;
+    colorBlendState.logicOp = VK_LOGIC_OP_COPY;
+    colorBlendState.attachmentCount = 1;
+    colorBlendState.pAttachments = &colorBlendAttachment;
+    colorBlendState.blendConstants[0] = 0.0f;
+
+    //The pipeline layout.  //TODO actual descriptor set layout
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 0;
+    pipelineLayoutInfo.pSetLayouts = nullptr;
+    pipelineLayoutInfo.pushConstantRangeCount = 0;
+    pipelineLayoutInfo.pPushConstantRanges = nullptr;
+
+    if (vkCreatePipelineLayout(m_Device, &pipelineLayoutInfo, nullptr, &m_PipelineLayout) != VK_SUCCESS) 
+    {
+        printf("Could not create pipeline layout for rendering pipeline!\n");
+        return false;
+    }
+
+    //The render pass.
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = m_Settings.m_OutputFormat;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 0;  //Attachment 0 means that writing to layout location 0 in the fragment shader will affect this attachment.
+    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorAttachmentRef;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+
+    if (vkCreateRenderPass(m_Device, &renderPassInfo, nullptr, &m_RenderPass) != VK_SUCCESS) 
+    {
+        printf("Could not create render pass for pipeline!\n");
+        return false;
+    }
+
+
+    /*
+     * Add all these together in the final pipeline state info struct.
+     */
+    VkGraphicsPipelineCreateInfo psoInfo{}; //Initializer list default inits pointers and numeric variables to 0! Vk structs don't have a default constructor.
+    psoInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    psoInfo.pNext = nullptr;
+    psoInfo.flags = 0;
+
+    //Add the data to the pipeline.
+    psoInfo.stageCount = 2;
+    psoInfo.pStages = &shaderStages[0];
+    psoInfo.pVertexInputState = &vertexInfo;
+    psoInfo.pInputAssemblyState = &inputAssembly;
+    psoInfo.pViewportState = &viewportState;
+    psoInfo.pRasterizationState = &rasterizationState;
+    psoInfo.pMultisampleState = &multiSampleState;
+    psoInfo.pDepthStencilState = &depthStencilState;
+    psoInfo.pColorBlendState = &colorBlendState;
+    psoInfo.layout = m_PipelineLayout;
+    psoInfo.renderPass = m_RenderPass;
+    psoInfo.subpass = 0;
+
+    psoInfo.pDynamicState = nullptr;
+    psoInfo.basePipelineHandle = nullptr;
+    psoInfo.basePipelineIndex = -1;
+
+    if (vkCreateGraphicsPipelines(m_Device, VK_NULL_HANDLE, 1, &psoInfo, nullptr, &m_Pipeline) != VK_SUCCESS) 
+    {
+        printf("Could not create graphics pipeline!\n");
+        return false;
+    }
+
+    printf("Succesfully created graphics pipeline!\n");
+    return true;
+}
+
+bool Renderer::ReadFile(const std::string& a_File, std::vector<char>& a_Output)
+{
+    std::ifstream fileStream(a_File, std::ios::binary | std::ios::ate); //Ate will start the file pointer at the back, so tellg will return the size of the file.
+    if(fileStream.is_open())
+    {
+        const auto size = fileStream.tellg();
+        fileStream.seekg(0); //Reset to start of the file.
+        a_Output.resize(size);
+        fileStream.read(&a_Output[0], size);
+        fileStream.close();
+        return true;
+    }
+    return false;
+}
+
+bool Renderer::CreateShaderModuleFromSpirV(const std::string& a_File, VkShaderModule& a_Output)
+{
+    std::vector<char> byteCode;
+    if(!ReadFile(a_File, byteCode))
+    {
+        printf("Could not load shader %s from Spir-V file.\n", a_File.c_str());
+        return false;
+    }
+
+    VkShaderModuleCreateInfo shaderCreateInfo{};
+    shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    shaderCreateInfo.codeSize = byteCode.size();
+    shaderCreateInfo.pNext = nullptr;
+    shaderCreateInfo.flags = 0;
+    shaderCreateInfo.pCode = reinterpret_cast<const uint32_t*>(byteCode.data());
+    if (vkCreateShaderModule(m_Device, &shaderCreateInfo, nullptr, &a_Output) != VK_SUCCESS)
+    {
+        printf("Could not convert Spir-V to shader module for file %s!\n", a_File.c_str());
+        return false;
+    }
+
     return true;
 }
 

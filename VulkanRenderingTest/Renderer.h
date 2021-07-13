@@ -65,6 +65,9 @@ struct RendererSettings
 	//Window and swapchain resolution.
 	std::uint32_t windowWidth = 512;
 	std::uint32_t windowHeight = 512;
+
+	//The format used to output to the screen.
+	VkFormat m_OutputFormat = VK_FORMAT_B8G8R8A8_SRGB;
 };
 
 /*
@@ -165,6 +168,16 @@ private:
      */
 	bool InitPipeline();
 
+	/*
+	 * Read a file and store the contents in the given output buffer as chars.
+	 */
+	bool ReadFile(const std::string& a_File, std::vector<char>& a_Output);
+
+	/*
+	 * Load a Spir-V shader from file and compile it.
+	 */
+	bool CreateShaderModuleFromSpirV(const std::string& a_File, VkShaderModule& a_Output);
+
 	//Vulkan debug layer callback function.
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -197,11 +210,13 @@ private:
 
 	VmaAllocator m_Allocator;				//External library handling memory management to keep this project a bit cleaner.
 
-
 	Frame m_FrameData[NUM_FRAMES];			//Resources for each frame.
 	VkPipeline m_Pipeline;					//The pipeline containing all state used for rendering.
 	VkShaderModule m_VertexShader;			//The vertex shader for the graphics pipeline.
 	VkShaderModule m_FragmentShader;		//The fragment shader for the graphics pipeline.
+	VkPipelineLayout m_PipelineLayout;		//The layout of the graphics pipeline.
+	VkRenderPass m_RenderPass;				//The render pass for the default rendering pipeline.
+
 	/*
 	 * Dynamic Vulkan objects directly related to rendering.
 	 */
