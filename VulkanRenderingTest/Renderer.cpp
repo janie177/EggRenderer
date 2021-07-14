@@ -104,7 +104,9 @@ bool Renderer::CleanUp()
         vkFreeCommandBuffers(m_Device, frame.m_CommandPool, 1, &frame.m_CommandBuffer);
         vkDestroyCommandPool(m_Device, frame.m_CommandPool, nullptr);
         vkDestroyFence(m_Device, frame.m_Fence, nullptr);
-        vkDestroySemaphore(m_Device, frame.m_Semaphore, nullptr);
+        vkDestroySemaphore(m_Device, frame.m_WaitForFrameSemaphore, nullptr);
+        vkDestroySemaphore(m_Device, frame.m_WaitForRenderSemaphore, nullptr);
+        vkDestroyFramebuffer(m_Device, frame.m_FrameBuffer, nullptr);
     }
 
     //Delete the allocated fragment and vertex shaders.
@@ -150,11 +152,88 @@ Renderer::Renderer() :
 
 bool Renderer::Run()
 {
+    //Ensure that the renderer has been properly set-up.
     if(!m_Initialized)
     {
         printf("Renderer not initialized!\n");
         return false;
     }
+
+    //The frame data for the current frame.
+    auto& frameData = m_FrameData[m_CurrentFrameIndex];
+    const auto& cmdBuffer = frameData.m_CommandBuffer;
+
+    //Ensure that command buffer execution is done for this frame by waiting for fence completion.
+    vkWaitForFences(m_Device, 1, &frameData.m_Fence, true, std::numeric_limits<std::uint32_t>::max());
+
+    //Reset the fence now that it has been signaled.
+    vkResetFences(m_Device, 1, &frameData.m_Fence);
+
+    //Prepare the command buffer for rendering
+    vkResetCommandPool(m_Device, frameData.m_CommandPool, 0);
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VkCommandBufferUsageFlagBits::VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    if(vkBeginCommandBuffer(cmdBuffer, &beginInfo) != VK_SUCCESS)
+    {
+        printf("Could not fill command buffer!\n");
+        return false;
+    }
+
+    //Fill the command buffer
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = m_RenderPass;
+    renderPassInfo.framebuffer = frameData.m_FrameBuffer;
+    renderPassInfo.renderArea.offset = { 0, 0 };
+    renderPassInfo.renderArea.extent = {m_Settings.windowWidth, m_Settings.windowHeight};
+    VkClearValue clearColor = { m_Settings.clearColor.r, m_Settings.clearColor.g, m_Settings.clearColor.b, m_Settings.clearColor.a };
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearColor;
+    vkCmdBeginRenderPass(cmdBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline);
+    vkCmdDraw(cmdBuffer, 3, 1, 0, 0);
+    vkCmdEndRenderPass(cmdBuffer);
+    if (vkEndCommandBuffer(cmdBuffer) != VK_SUCCESS)
+    {
+        printf("Could not end recording of command buffer!\n");
+        return false;
+    }
+
+    //Submit the command queue. Signal the fence once done.
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &frameData.m_CommandBuffer;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = &frameData.m_WaitForRenderSemaphore;                 //Signal this semaphore when done so that the image is presented.
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = &m_FrameReadySemaphore;                                //Wait for this semaphore so that the frame buffer is actually available when the rendering happens.
+    VkPipelineStageFlags wait[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };    //Semaphore should wait for this stage: outputting from fragment shader.
+    submitInfo.pWaitDstStageMask = wait;                                                //Corresponds with the semaphore index.
+
+    vkQueueSubmit(m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_Queue, 1, &submitInfo, frameData.m_Fence);
+
+    //TODO:
+    /*
+     * - Reset command buffer.
+     * - Fill command buffer.
+     * - Draw command buffer.
+     * - Insert this fence for the command buffer.
+     * - Fill present info so that m_CurrentSemaphore is ready before presenting.
+     */
+
+    //Start building the command buffer.
+    VkPresentInfoKHR presentInfo{}; //TODO
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = &frameData.m_WaitForRenderSemaphore;  //Wait for the command buffer to stop executing before presenting.
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &m_SwapChain;
+    presentInfo.pImageIndices = &m_CurrentFrameIndex;
+    presentInfo.pResults = nullptr;
+    vkQueuePresentKHR(m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_Queue, &presentInfo);
 
     //Destroy unused meshes. Ensure that they are not in flight by keeping a reference of them in the renderer when on the GPU.
     auto itr = m_Meshes.begin();
@@ -172,7 +251,14 @@ bool Renderer::Run()
         }
     }
 
-	return false;
+    /*
+     * Retrieve the next available frame index.
+     * The semaphore will be signaled as soon as the frame becomes available.
+     * Remember it for the next frame, to be used with the queue submit command.
+     */
+    vkAcquireNextImageKHR(m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), frameData.m_WaitForFrameSemaphore, nullptr, &m_CurrentFrameIndex);
+    m_FrameReadySemaphore = frameData.m_WaitForFrameSemaphore;
+	return true;
 }
 
 std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBuffer, const std::vector<std::uint32_t>& a_IndexBuffer)
@@ -262,7 +348,7 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
     }
 
     //Specify which data to copy where.
-    VkBufferCopy copyInfo;
+    VkBufferCopy copyInfo{};
     copyInfo.size = bufferSize;
     copyInfo.dstOffset = 0;
     copyInfo.srcOffset = 0;
@@ -271,7 +357,7 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
     //Stop recording.
     vkEndCommandBuffer(m_CopyBuffer);
 
-    VkSubmitInfo submitInfo;
+    VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &m_CopyBuffer;
@@ -283,8 +369,8 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
     submitInfo.signalSemaphoreCount = 0;
 
     //Create a fence for synchronization.
-    VkFence uploadFence;
-    VkFenceCreateInfo fenceInfo;
+    VkFence uploadFence{};
+    VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = 0;
     fenceInfo.pNext = nullptr;
@@ -611,7 +697,7 @@ bool Renderer::CreateSwapChain()
     //I just force these, and if not supported I can always adjusted.
     VkSurfaceFormatKHR surfaceFormat;
     surfaceFormat.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-    surfaceFormat.format = m_Settings.m_OutputFormat;
+    surfaceFormat.format = m_Settings.outputFormat;
 
     //Query the capabilities for the physical device and surface that were created earlier.
     VkSurfaceCapabilitiesKHR surfaceCapabilities;
@@ -627,6 +713,7 @@ bool Renderer::CreateSwapChain()
      * Create the swap chain images.
      */
     uint32_t swapBufferCount = surfaceCapabilities.minImageCount + 1;
+    m_NumFrames = swapBufferCount;  //Store for later use.
     VkSwapchainCreateInfoKHR swapChainInfo;
     swapChainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     swapChainInfo.pNext = NULL;
@@ -638,12 +725,12 @@ bool Renderer::CreateSwapChain()
     swapChainInfo.imageExtent = swapExtent;
     swapChainInfo.imageArrayLayers = 1;
     swapChainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    swapChainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;         //Only one swapchain will have access.
+    swapChainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;         //This has to be concurrent when the present queue is different from graphics queue.
     swapChainInfo.queueFamilyIndexCount = 0;                            //This is only set when sharing mode is set to concurrent.
     swapChainInfo.pQueueFamilyIndices = NULL;                           //Again only relevant when set to concurrent.
     swapChainInfo.preTransform = surfaceCapabilities.currentTransform;
     swapChainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    swapChainInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    swapChainInfo.presentMode = m_Settings.vSync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR;
     swapChainInfo.clipped = VK_TRUE;
     swapChainInfo.oldSwapchain = VK_NULL_HANDLE;
 
@@ -701,6 +788,7 @@ bool Renderer::CreateSwapChain()
 
 bool Renderer::InitPipeline()
 {
+
     /*
      * Setup the copy command buffer and pool.
      * These are used to copy data to the GPU.
@@ -724,55 +812,6 @@ bool Renderer::InitPipeline()
     copyCommandBufferInfo.pNext = nullptr;
     copyCommandBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     vkAllocateCommandBuffers(m_Device, &copyCommandBufferInfo, &m_CopyBuffer);
-
-    /*
-     * Set up the resources for each frame.
-     */
-    for(auto frameIndex = 0; frameIndex < NUM_FRAMES; ++frameIndex)
-    {
-        auto& frameData = m_FrameData[frameIndex];
-
-        VkCommandPoolCreateInfo poolInfo{};
-        poolInfo.queueFamilyIndex = m_Queues[(unsigned)QueueType::QUEUE_TYPE_GRAPHICS].m_FamilyIndex;
-        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.flags = 0;
-
-        if (vkCreateCommandPool(m_Device, &poolInfo, nullptr, &frameData.m_CommandPool) != VK_SUCCESS)
-        {
-            printf("Could not create graphics command pool for frame index %i!\n", frameIndex);
-            return false;
-        }
-
-        VkCommandBufferAllocateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        bufferInfo.commandBufferCount = 1;
-        bufferInfo.level = VkCommandBufferLevel::VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        bufferInfo.commandPool = frameData.m_CommandPool;
-
-        if (vkAllocateCommandBuffers(m_Device, &bufferInfo, &frameData.m_CommandBuffer) != VK_SUCCESS)
-        {
-            printf("Could not create graphics command buffer for frame index %i!\n", frameIndex);
-            return false;
-        }
-
-        VkFenceCreateInfo fenceInfo{};
-        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fenceInfo.flags = VkFenceCreateFlagBits::VK_FENCE_CREATE_SIGNALED_BIT;  //Signal by default so that the frame is marked as available.
-        if(vkCreateFence(m_Device, &fenceInfo, nullptr, &frameData.m_Fence) != VK_SUCCESS)
-        {
-            printf("Could not create fence for frame index %i!\n", frameIndex);
-            return false;
-        }
-
-        VkSemaphoreCreateInfo semaphoreInfo{};
-        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-        if (vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &frameData.m_Semaphore) != VK_SUCCESS)
-        {
-            printf("Could not create fence for frame index %i!\n", frameIndex);
-            return false;
-        }
-    }
 
     /*
      * Load the Spir-V shaders from disk.
@@ -903,7 +942,7 @@ bool Renderer::InitPipeline()
 
     //The render pass.
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = m_Settings.m_OutputFormat;
+    colorAttachment.format = m_Settings.outputFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -966,7 +1005,86 @@ bool Renderer::InitPipeline()
         return false;
     }
 
-    printf("Succesfully created graphics pipeline!\n");
+    /*
+     * Set up the resources for each frame.
+     */
+    m_FrameData.resize(m_NumFrames);
+    for (auto frameIndex = 0u; frameIndex < m_NumFrames; ++frameIndex)
+    {
+        auto& frameData = m_FrameData[frameIndex];
+
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.queueFamilyIndex = m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_FamilyIndex;
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.flags = 0;
+
+        if (vkCreateCommandPool(m_Device, &poolInfo, nullptr, &frameData.m_CommandPool) != VK_SUCCESS)
+        {
+            printf("Could not create graphics command pool for frame index %i!\n", frameIndex);
+            return false;
+        }
+
+        VkCommandBufferAllocateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        bufferInfo.commandBufferCount = 1;
+        bufferInfo.level = VkCommandBufferLevel::VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        bufferInfo.commandPool = frameData.m_CommandPool;
+
+        if (vkAllocateCommandBuffers(m_Device, &bufferInfo, &frameData.m_CommandBuffer) != VK_SUCCESS)
+        {
+            printf("Could not create graphics command buffer for frame index %i!\n", frameIndex);
+            return false;
+        }
+
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = VkFenceCreateFlagBits::VK_FENCE_CREATE_SIGNALED_BIT;  //Signal by default so that the frame is marked as available.
+        if (vkCreateFence(m_Device, &fenceInfo, nullptr, &frameData.m_Fence) != VK_SUCCESS)
+        {
+            printf("Could not create fence for frame index %i!\n", frameIndex);
+            return false;
+        }
+
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        if (vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &frameData.m_WaitForFrameSemaphore) != VK_SUCCESS || vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &frameData.m_WaitForRenderSemaphore) != VK_SUCCESS)
+        {
+            printf("Could not create semaphore for frame index %i!\n", frameIndex);
+            return false;
+        }
+
+        /*
+         * Set up a frame buffer that allows the shaders to actually output to the swapchain images.
+         */
+        VkImageView attachments[] = { m_SwapViews[frameIndex] };    //image view corresponding with the swapchain index for this frame.
+
+        VkFramebufferCreateInfo fboInfo{};
+        fboInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fboInfo.renderPass = m_RenderPass;
+        fboInfo.attachmentCount = 1;
+        fboInfo.pAttachments = attachments;
+        fboInfo.width = m_Settings.windowWidth;
+        fboInfo.height = m_Settings.windowHeight;
+        fboInfo.layers = 1;
+
+        if (vkCreateFramebuffer(m_Device, &fboInfo, nullptr, &frameData.m_FrameBuffer) != VK_SUCCESS) 
+        {
+            printf("Could not create FBO for frame index %i!\n", frameIndex);
+            return false;
+        }
+    }
+
+    //Assign the frame index to be 0
+    m_FrameReadySemaphore = m_FrameData[m_NumFrames - 1].m_WaitForFrameSemaphore;   //Semaphore for the frame before this is used.
+    vkAcquireNextImageKHR(m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), m_FrameReadySemaphore, nullptr, &m_CurrentFrameIndex);
+    if (m_CurrentFrameIndex != 0)
+    {
+        printf("First frame index is not 0! This doesn't work with my setup.\n");
+        return false;
+    }
+
+    printf("Successfully created graphics pipeline!\n");
     return true;
 }
 

@@ -9,6 +9,7 @@ int main()
 {
     RendererSettings settings;
     settings.debugFlags = DebugPrintFlags::ERROR;
+    settings.vSync = true;
 
     auto renderer = std::make_unique<Renderer>();
 
@@ -17,7 +18,15 @@ int main()
         std::vector<Vertex> vertices{ Vertex{glm::vec3{0.f, 0.f, 0.f}, glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}}};
         std::vector<uint32_t> indices{1, 2, 3, 4, 5, 6, 22, 1};
         auto mesh = renderer->CreateMesh(vertices, indices);
-        renderer->Run();
+
+        static int frameId = 0;
+        bool run = true;
+        while(run)
+        {
+            run = renderer->Run();
+            ++frameId;
+            printf("Done rendering frame %i.\n", frameId);
+        }
     }
     else
     {

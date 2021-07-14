@@ -8,8 +8,6 @@
 
 #include "vk_mem_alloc.h"
 
-#define NUM_FRAMES 2
-
 enum class DebugPrintFlags : uint32_t
 {
 	VERBOSE = 1,
@@ -45,10 +43,12 @@ struct QueueInfo
  */
 struct Frame
 {
-	VkFence m_Fence;					//The fence used to signal when the frame has completed.
-	VkSemaphore m_Semaphore;			//The semaphore used to signal the swapchain presentation.
-	VkCommandBuffer m_CommandBuffer;	//The graphics command buffer used for drawing and presenting.
-	VkCommandPool m_CommandPool;		//The command pool used to allocate commands for this frame.
+	VkFence m_Fence;						//The fence used to signal when the frame has completed.
+	VkSemaphore m_WaitForFrameSemaphore;	//The semaphore that is signaled by the swapchain when a frame is ready to be written to.
+	VkSemaphore m_WaitForRenderSemaphore;	//The semaphore that is signaled when the command buffer finishes, and the frame can be presented.
+	VkCommandBuffer m_CommandBuffer;		//The graphics command buffer used for drawing and presenting.
+	VkCommandPool m_CommandPool;			//The command pool used to allocate commands for this frame.
+	VkFramebuffer m_FrameBuffer;			//The framebuffer that is bound to the swap chain's image view.
 };
 
 struct RendererSettings
@@ -66,8 +66,14 @@ struct RendererSettings
 	std::uint32_t windowWidth = 512;
 	std::uint32_t windowHeight = 512;
 
+	//Use vsync or not.
+	bool vSync = true;
+
+	//The clear color for the screen.
+	glm::vec4 clearColor = glm::vec4(0.f, 0.f, 0.f, 1.f);
+
 	//The format used to output to the screen.
-	VkFormat m_OutputFormat = VK_FORMAT_B8G8R8A8_SRGB;
+	VkFormat outputFormat = VK_FORMAT_B8G8R8A8_SRGB;
 };
 
 /*
@@ -210,7 +216,10 @@ private:
 
 	VmaAllocator m_Allocator;				//External library handling memory management to keep this project a bit cleaner.
 
-	Frame m_FrameData[NUM_FRAMES];			//Resources for each frame.
+	std::uint32_t m_NumFrames;				//The amount of frames in the swapchain.
+	std::uint32_t m_CurrentFrameIndex;		//The current frame index.
+	VkSemaphore m_FrameReadySemaphore;	//This semaphore is signaled by the swapchain when it's ready for the next frame. 
+	std::vector<Frame> m_FrameData;			//Resources for each frame.
 	VkPipeline m_Pipeline;					//The pipeline containing all state used for rendering.
 	VkShaderModule m_VertexShader;			//The vertex shader for the graphics pipeline.
 	VkShaderModule m_FragmentShader;		//The fragment shader for the graphics pipeline.
