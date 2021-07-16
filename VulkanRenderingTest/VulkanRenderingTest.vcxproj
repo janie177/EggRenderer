@@ -209,10 +209,13 @@
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="Renderer.cpp" />
+    <ClCompile Include="RenderStage_Deferred.cpp" />
     <ClCompile Include="vk_mem_alloc.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Renderer.h" />
+    <ClInclude Include="RenderStage.h" />
+    <ClInclude Include="RenderUtility.h" />
     <ClInclude Include="vk_mem_alloc.h" />
   </ItemGroup>
   <ItemGroup>

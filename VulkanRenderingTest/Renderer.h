@@ -7,6 +7,7 @@
 #include <glm/glm/glm.hpp>
 
 #include "vk_mem_alloc.h"
+#include "RenderStage.h"
 
 enum class DebugPrintFlags : uint32_t
 {
@@ -68,6 +69,9 @@ struct RendererSettings
 
 	//Use vsync or not.
 	bool vSync = true;
+
+	//The amount of buffers in the swapchain, 2 or three is preferred. May be changed depending on device minimum and maximum.
+	std::uint32_t m_SwapBufferCount;
 
 	//The clear color for the screen.
 	glm::vec4 clearColor = glm::vec4(0.f, 0.f, 0.f, 1.f);
@@ -174,16 +178,6 @@ private:
      */
 	bool InitPipeline();
 
-	/*
-	 * Read a file and store the contents in the given output buffer as chars.
-	 */
-	bool ReadFile(const std::string& a_File, std::vector<char>& a_Output);
-
-	/*
-	 * Load a Spir-V shader from file and compile it.
-	 */
-	bool CreateShaderModuleFromSpirV(const std::string& a_File, VkShaderModule& a_Output);
-
 	//Vulkan debug layer callback function.
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -220,12 +214,12 @@ private:
 	std::uint32_t m_CurrentFrameIndex;		//The current frame index.
 	VkSemaphore m_FrameReadySemaphore;	//This semaphore is signaled by the swapchain when it's ready for the next frame. 
 	std::vector<Frame> m_FrameData;			//Resources for each frame.
-	VkPipeline m_Pipeline;					//The pipeline containing all state used for rendering.
-	VkShaderModule m_VertexShader;			//The vertex shader for the graphics pipeline.
-	VkShaderModule m_FragmentShader;		//The fragment shader for the graphics pipeline.
-	VkPipelineLayout m_PipelineLayout;		//The layout of the graphics pipeline.
-	VkRenderPass m_RenderPass;				//The render pass for the default rendering pipeline.
 
+	/*
+	 * Stages in the renderer.
+	 */
+	RenderStage_Deferred m_DeferredStage;			//The render stage where the output buffer is cleared.
+	
 	/*
 	 * Dynamic Vulkan objects directly related to rendering.
 	 */

@@ -91,12 +91,12 @@ bool Renderer::CleanUp()
     }
     m_Meshes.clear();
 
-    //TODO clean up textures, etc.
+    //TODO render stage and textures
 
-    //Pipeline related objects.
-    vkDestroyPipeline(m_Device, m_Pipeline, nullptr);
-    vkDestroyRenderPass(m_Device, m_RenderPass, nullptr);
-    vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
+	/*
+	 * Clean up the render stages.
+	 */
+    m_DeferredStage.CleanUp(m_Device);
 
     //Destroy the resources per frame.
     for(auto& frame : m_FrameData)
@@ -108,10 +108,6 @@ bool Renderer::CleanUp()
         vkDestroySemaphore(m_Device, frame.m_WaitForRenderSemaphore, nullptr);
         vkDestroyFramebuffer(m_Device, frame.m_FrameBuffer, nullptr);
     }
-
-    //Delete the allocated fragment and vertex shaders.
-    vkDestroyShaderModule(m_Device, m_VertexShader, nullptr);
-    vkDestroyShaderModule(m_Device, m_FragmentShader, nullptr);
 
     //Destroy all allocated memory.
     for(auto& view : m_SwapViews)
@@ -161,7 +157,7 @@ bool Renderer::Run()
 
     //The frame data for the current frame.
     auto& frameData = m_FrameData[m_CurrentFrameIndex];
-    const auto& cmdBuffer = frameData.m_CommandBuffer;
+    auto& cmdBuffer = frameData.m_CommandBuffer;
 
     //Ensure that command buffer execution is done for this frame by waiting for fence completion.
     vkWaitForFences(m_Device, 1, &frameData.m_Fence, true, std::numeric_limits<std::uint32_t>::max());
@@ -181,20 +177,14 @@ bool Renderer::Run()
         return false;
     }
 
-    //Fill the command buffer
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = m_RenderPass;
-    renderPassInfo.framebuffer = frameData.m_FrameBuffer;
-    renderPassInfo.renderArea.offset = { 0, 0 };
-    renderPassInfo.renderArea.extent = {m_Settings.windowWidth, m_Settings.windowHeight};
-    VkClearValue clearColor = { m_Settings.clearColor.r, m_Settings.clearColor.g, m_Settings.clearColor.b, m_Settings.clearColor.a };
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
-    vkCmdBeginRenderPass(cmdBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline);
-    vkCmdDraw(cmdBuffer, 3, 1, 0, 0);
-    vkCmdEndRenderPass(cmdBuffer);
+    /*
+     * Execute all the render stages.
+     */
+    m_DeferredStage.RecordCommandBuffer(m_Settings, cmdBuffer, m_CurrentFrameIndex, frameData);
+
+	/*
+	 * Finally end the command list and submit it.
+	 */
     if (vkEndCommandBuffer(cmdBuffer) != VK_SUCCESS)
     {
         printf("Could not end recording of command buffer!\n");
@@ -215,17 +205,8 @@ bool Renderer::Run()
 
     vkQueueSubmit(m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_Queue, 1, &submitInfo, frameData.m_Fence);
 
-    //TODO:
-    /*
-     * - Reset command buffer.
-     * - Fill command buffer.
-     * - Draw command buffer.
-     * - Insert this fence for the command buffer.
-     * - Fill present info so that m_CurrentSemaphore is ready before presenting.
-     */
-
     //Start building the command buffer.
-    VkPresentInfoKHR presentInfo{}; //TODO
+    VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = &frameData.m_WaitForRenderSemaphore;  //Wait for the command buffer to stop executing before presenting.
@@ -418,7 +399,7 @@ bool Renderer::InitVulkan()
     }
 
     //Information about the vulkan context.
-    VkInstanceCreateInfo createInfo;
+    VkInstanceCreateInfo createInfo{};
     VkDebugUtilsMessengerCreateInfoEXT debug;
     std::vector<const char*> validationLayers{ "VK_LAYER_KHRONOS_validation" };
     {
@@ -443,20 +424,54 @@ bool Renderer::InitVulkan()
             debug.pUserData = nullptr;
             createInfo.pNext = &debug;
 
+        	/*
+        	 * Ensure that the validation layers are actually supported.
+        	 * Mostly taken from Vulkan-Tutorial.com
+        	 */
+            uint32_t layerCount;
+            vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+            std::vector<VkLayerProperties> availableLayers(layerCount);
+            vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+            auto itr = validationLayers.begin();
+            while (itr != validationLayers.end()) 
+            {
+                bool layerFound = false;
+
+                for (const auto& layerProperties : availableLayers) 
+                {
+                    if (strcmp(*itr, layerProperties.layerName) == 0) 
+                    {
+                        layerFound = true;
+                        break;
+                    }
+                }
+
+                if (!layerFound) 
+                {
+                    printf("Could not find layer: %s. Skipping layer addition.\n", *itr);
+                    itr = validationLayers.erase(itr);
+                }
+                else 
+                {
+                    ++itr;
+                }
+            }
+
             //Set the layers and pass data pointers.
             createInfo.enabledLayerCount = static_cast<std::uint32_t>(validationLayers.size());
-            createInfo.ppEnabledLayerNames = validationLayers.data();
+            createInfo.ppEnabledLayerNames = createInfo.enabledLayerCount == 0 ? nullptr : validationLayers.data();
         }
 
         createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-        createInfo.ppEnabledExtensionNames = extensions.data();
+        createInfo.ppEnabledExtensionNames = createInfo.enabledExtensionCount == 0 ? nullptr : extensions.data();
     }
 
     //Create the actual instance.
     const auto initResult = vkCreateInstance(&createInfo, nullptr, &m_VulkanInstance);
     if (initResult != VK_SUCCESS)
     {
-        printf("Could not create Vulkan instance. Cause: %i\n", initResult);
+        printf("Could not create Vulkan instance. Cause: %u\n", initResult);
         return false;
     }
 
@@ -713,6 +728,10 @@ bool Renderer::CreateSwapChain()
      * Create the swap chain images.
      */
     uint32_t swapBufferCount = surfaceCapabilities.minImageCount + 1;
+    swapBufferCount = std::max(swapBufferCount, m_Settings.m_SwapBufferCount);
+    swapBufferCount = std::min(surfaceCapabilities.maxImageCount, swapBufferCount);
+    m_Settings.m_SwapBufferCount = swapBufferCount;
+	
     m_NumFrames = swapBufferCount;  //Store for later use.
     VkSwapchainCreateInfoKHR swapChainInfo;
     swapChainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -814,196 +833,9 @@ bool Renderer::InitPipeline()
     vkAllocateCommandBuffers(m_Device, &copyCommandBufferInfo, &m_CopyBuffer);
 
     /*
-     * Load the Spir-V shaders from disk.
+     * Init the render stages for each frame.
      */
-    const std::string workingDir = std::filesystem::current_path().string();
-
-    if(!CreateShaderModuleFromSpirV(workingDir + "/shaders/output/default.vert.spv", m_VertexShader) || !CreateShaderModuleFromSpirV(workingDir + "/shaders/output/default.frag.spv", m_FragmentShader))
-    {
-        printf("Could not load fragment or vertex shader from Spir-V.\n");
-        return false;
-    }
-
-    /*
-     * Create a graphics pipeline state object.
-     * This object requires all state like blending and shaders used to be bound.
-     */
-
-    //Add the shaders to the pipeline
-    VkPipelineShaderStageCreateInfo vertexStage{};
-    vertexStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertexStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertexStage.module = m_VertexShader;
-    vertexStage.pName = "main";
-    VkPipelineShaderStageCreateInfo fragmentStage{};
-    fragmentStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragmentStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragmentStage.module = m_FragmentShader;
-    fragmentStage.pName = "main";
-    VkPipelineShaderStageCreateInfo shaderStages[] = { vertexStage, fragmentStage };
-
-    //Vertex input
-    VkPipelineVertexInputStateCreateInfo vertexInfo{};
-    vertexInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInfo.vertexBindingDescriptionCount = 0;
-    vertexInfo.vertexAttributeDescriptionCount = 0; //TODO
-    vertexInfo.pVertexBindingDescriptions = nullptr;
-    vertexInfo.pVertexAttributeDescriptions = nullptr;
-
-    //Input assembly state
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;   //TODO: maybe different kinds?
-    inputAssembly.primitiveRestartEnable = false;
-
-    //Viewport
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = (float)m_Settings.windowWidth;
-    viewport.height = (float)m_Settings.windowHeight;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
-    scissor.extent = VkExtent2D{m_Settings.windowWidth, m_Settings.windowHeight};
-    VkPipelineViewportStateCreateInfo viewportState{};
-    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
-    viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
-
-    //Rasterizer state
-    VkPipelineRasterizationStateCreateInfo rasterizationState{};
-    rasterizationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizationState.depthClampEnable = VK_FALSE;         //Clamp instead of discard would be nice for shadow mapping
-    rasterizationState.rasterizerDiscardEnable = VK_FALSE;  //Disables all input, not sure when this would be useful, maybe when switching menus and not rendering the main scene?
-    rasterizationState.polygonMode = VK_POLYGON_MODE_FILL;  //Can draw as lines which is really awesome for debugging and making people think I'm hackerman
-    rasterizationState.lineWidth = 1.0f;                    //Line width in case of hackerman mode
-    rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;    //Same as GL
-    rasterizationState.frontFace = VK_FRONT_FACE_CLOCKWISE; //Same as GL
-    rasterizationState.depthBiasEnable = VK_FALSE;          //Useful for shadow mapping to prevent acne.
-    rasterizationState.depthBiasConstantFactor = 0.0f;      //^    
-    rasterizationState.depthBiasClamp = 0.0f;               //^
-    rasterizationState.depthBiasSlopeFactor = 0.0f;         //^
-
-    //Multi-sampling which nobody really uses anymore anyways. TAA all the way!
-    VkPipelineMultisampleStateCreateInfo multiSampleState{};
-    multiSampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multiSampleState.sampleShadingEnable = VK_FALSE;
-    multiSampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-    multiSampleState.minSampleShading = 1.0f;
-    multiSampleState.pSampleMask = nullptr;
-    multiSampleState.alphaToCoverageEnable = VK_FALSE;
-    multiSampleState.alphaToOneEnable = VK_FALSE;
-
-    //The depth state. Stencil is not used for now.
-    VkPipelineDepthStencilStateCreateInfo depthStencilState{};
-    depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS;
-    depthStencilState.depthTestEnable = true;
-    depthStencilState.depthWriteEnable = true;
-    depthStencilState.stencilTestEnable = false;
-    depthStencilState.depthBoundsTestEnable = false;
-
-    //Color blending.
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-
-    VkPipelineColorBlendStateCreateInfo colorBlendState{};
-    colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlendState.logicOpEnable = VK_FALSE;
-    colorBlendState.logicOp = VK_LOGIC_OP_COPY;
-    colorBlendState.attachmentCount = 1;
-    colorBlendState.pAttachments = &colorBlendAttachment;
-    colorBlendState.blendConstants[0] = 0.0f;
-
-    //The pipeline layout.  //TODO actual descriptor set layout
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;
-    pipelineLayoutInfo.pSetLayouts = nullptr;
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
-    pipelineLayoutInfo.pPushConstantRanges = nullptr;
-
-    if (vkCreatePipelineLayout(m_Device, &pipelineLayoutInfo, nullptr, &m_PipelineLayout) != VK_SUCCESS) 
-    {
-        printf("Could not create pipeline layout for rendering pipeline!\n");
-        return false;
-    }
-
-    //The render pass.
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = m_Settings.outputFormat;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;  //Attachment 0 means that writing to layout location 0 in the fragment shader will affect this attachment.
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
-
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-
-    if (vkCreateRenderPass(m_Device, &renderPassInfo, nullptr, &m_RenderPass) != VK_SUCCESS) 
-    {
-        printf("Could not create render pass for pipeline!\n");
-        return false;
-    }
-
-
-    /*
-     * Add all these together in the final pipeline state info struct.
-     */
-    VkGraphicsPipelineCreateInfo psoInfo{}; //Initializer list default inits pointers and numeric variables to 0! Vk structs don't have a default constructor.
-    psoInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    psoInfo.pNext = nullptr;
-    psoInfo.flags = 0;
-
-    //Add the data to the pipeline.
-    psoInfo.stageCount = 2;
-    psoInfo.pStages = &shaderStages[0];
-    psoInfo.pVertexInputState = &vertexInfo;
-    psoInfo.pInputAssemblyState = &inputAssembly;
-    psoInfo.pViewportState = &viewportState;
-    psoInfo.pRasterizationState = &rasterizationState;
-    psoInfo.pMultisampleState = &multiSampleState;
-    psoInfo.pDepthStencilState = &depthStencilState;
-    psoInfo.pColorBlendState = &colorBlendState;
-    psoInfo.layout = m_PipelineLayout;
-    psoInfo.renderPass = m_RenderPass;
-    psoInfo.subpass = 0;
-
-    psoInfo.pDynamicState = nullptr;
-    psoInfo.basePipelineHandle = nullptr;
-    psoInfo.basePipelineIndex = -1;
-
-    if (vkCreateGraphicsPipelines(m_Device, VK_NULL_HANDLE, 1, &psoInfo, nullptr, &m_Pipeline) != VK_SUCCESS) 
-    {
-        printf("Could not create graphics pipeline!\n");
-        return false;
-    }
+    m_DeferredStage.Init(m_Settings, m_Settings.m_SwapBufferCount, m_Device);
 
     /*
      * Set up the resources for each frame.
@@ -1061,7 +893,7 @@ bool Renderer::InitPipeline()
 
         VkFramebufferCreateInfo fboInfo{};
         fboInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        fboInfo.renderPass = m_RenderPass;
+        fboInfo.renderPass = m_DeferredStage.GetRenderPass();   //TODO: replace this with the actual last output stage before the frame ends.
         fboInfo.attachmentCount = 1;
         fboInfo.pAttachments = attachments;
         fboInfo.width = m_Settings.windowWidth;
@@ -1085,45 +917,6 @@ bool Renderer::InitPipeline()
     }
 
     printf("Successfully created graphics pipeline!\n");
-    return true;
-}
-
-bool Renderer::ReadFile(const std::string& a_File, std::vector<char>& a_Output)
-{
-    std::ifstream fileStream(a_File, std::ios::binary | std::ios::ate); //Ate will start the file pointer at the back, so tellg will return the size of the file.
-    if(fileStream.is_open())
-    {
-        const auto size = fileStream.tellg();
-        fileStream.seekg(0); //Reset to start of the file.
-        a_Output.resize(size);
-        fileStream.read(&a_Output[0], size);
-        fileStream.close();
-        return true;
-    }
-    return false;
-}
-
-bool Renderer::CreateShaderModuleFromSpirV(const std::string& a_File, VkShaderModule& a_Output)
-{
-    std::vector<char> byteCode;
-    if(!ReadFile(a_File, byteCode))
-    {
-        printf("Could not load shader %s from Spir-V file.\n", a_File.c_str());
-        return false;
-    }
-
-    VkShaderModuleCreateInfo shaderCreateInfo{};
-    shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    shaderCreateInfo.codeSize = byteCode.size();
-    shaderCreateInfo.pNext = nullptr;
-    shaderCreateInfo.flags = 0;
-    shaderCreateInfo.pCode = reinterpret_cast<const uint32_t*>(byteCode.data());
-    if (vkCreateShaderModule(m_Device, &shaderCreateInfo, nullptr, &a_Output) != VK_SUCCESS)
-    {
-        printf("Could not convert Spir-V to shader module for file %s!\n", a_File.c_str());
-        return false;
-    }
-
     return true;
 }
 
