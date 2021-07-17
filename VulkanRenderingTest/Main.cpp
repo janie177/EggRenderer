@@ -19,6 +19,9 @@ int main()
         std::vector<uint32_t> indices{1, 2, 3, 4, 5, 6, 22, 1};
         auto mesh = renderer->CreateMesh(vertices, indices);
 
+        int width = 300;
+        int height = 250;
+    	
         static int frameId = 0;
         bool run = true;
         while(run)
@@ -26,10 +29,18 @@ int main()
             run = renderer->Run();
             ++frameId;
             printf("Done rendering frame %i.\n", frameId);
-        	if(frameId > 50)
-        	{
+
+        	//Try resizing the pipeline for test.
+            if(frameId == 50)
+            {
+                renderer->Resize(1600, 800);
+            }
+        	
+        	//Stop to test pipeline cleanup after some frames.
+            if(frameId > 100)
+            {
                 run = false;
-        	}
+            }
         }
     }
     else

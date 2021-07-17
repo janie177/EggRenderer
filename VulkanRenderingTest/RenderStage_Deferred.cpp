@@ -223,12 +223,6 @@ bool RenderStage_Deferred::RecordCommandBuffer(const RenderData& a_RenderData, V
     return true;
 }
 
-bool RenderStage_Deferred::Resize(const RenderData& a_RenderData)
-{
-	//TODO resize
-    return true;
-}
-
 bool RenderStage_Deferred::CleanUp(const RenderData& a_RenderData)
 {
     //Pipeline related objects.

@@ -19,11 +19,6 @@ public:
 	 * Provices the Vulkan logical device and the amount of buffers in the swap chain.
 	 */
 	virtual bool Init(const RenderData& a_RenderData) = 0;
-
-	/*
-	 * Called when the output buffer sizes change.
-	 */
-	virtual bool Resize(const RenderData& a_RenderData) = 0;
 	
 	/*
 	 * Deallocate any resources that were created by this render stage.
@@ -72,7 +67,6 @@ public:
 	bool RecordCommandBuffer(const RenderData& a_RenderData, VkCommandBuffer& a_CommandBuffer,
 		const uint32_t currentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
 		std::vector<VkSemaphore>& a_SignalSemaphores, std::vector<VkPipelineStageFlags>& a_WaitStageFlags) override;
-	bool Resize(const RenderData& a_RenderData) override;
 private:
 	VkPipeline m_Pipeline;					//The pipeline containing all state used for rendering.
 	VkShaderModule m_VertexShader;			//The vertex shader for the graphics pipeline.

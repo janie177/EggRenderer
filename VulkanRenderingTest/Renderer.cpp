@@ -17,6 +17,16 @@ bool Renderer::Init(const RendererSettings& a_Settings)
         printf("Cannot initialize renderer: already initialized!\n");
         return false;
 	}
+
+	/*
+	 * Ensure that the settings make sense.
+	 */
+    assert(a_Settings.resolutionX > 0);
+    assert(a_Settings.resolutionY > 0);
+    assert(a_Settings.resolutionX <= 1000000);
+    assert(a_Settings.resolutionY <= 1000000);
+    assert(a_Settings.m_SwapBufferCount > 0);
+    assert(a_Settings.m_SwapBufferCount < 100);
 	
     m_RenderData.m_Settings = a_Settings;
 
@@ -76,38 +86,99 @@ bool Renderer::Init(const RendererSettings& a_Settings)
         printf("Could not initialize Vulkan pipeline!\n");
         return false;
     }
+	
+    //Create the render targets for the pipeline.
+	if(!CreateSwapChainFrameData())
+	{
+        printf("Could not initialize render targets for swap chain!\n");
+        return false;
+	}
 
+	//Finally acquire the first frame index to render into.
+    if (!AcquireSwapChainIndex())
+    {
+        printf("Could not acquire first frame index from swap chain!");
+        return false;
+    }
+	
     m_Initialized = true;
 	return true;
 }
 
 bool Renderer::Resize(std::uint32_t a_Width, std::uint32_t a_Height)
 {
+	//If resizing to the same size, just don't do anything.
+    if(a_Width == m_RenderData.m_Settings.resolutionX && a_Height == m_RenderData.m_Settings.resolutionY)
+    {
+        return true;
+    }
+
+	//Resize the GLFW window.
+    glfwSetWindowSize(m_Window, a_Width, a_Height);
+	
+    //Wait for the pipeline to finish before molesting all the objects.
+    for (auto& frame : m_RenderData.m_FrameData)
+    {
+        vkWaitForFences(m_RenderData.m_Device, 1, &frame.m_Fence, true, std::numeric_limits<uint32_t>::max());
+    }
+	
 	/*
 	 * Update the settings.
 	 */
     m_RenderData.m_Settings.resolutionX = a_Width;
     m_RenderData.m_Settings.resolutionY = a_Height;
 
-	/*
-	 * Resize the swapchain.
-	 */
-	//TODO resize swapchain. Maybe wait for it to be all out of flight?
+	//Destroy all the render stages as those were created last.
+    for(int i = m_RenderStages.size() - 1; i >= 0; --i)
+    {
+		if(!m_RenderStages[i]->CleanUp(m_RenderData))
+		{
+            printf("Could not clean up renderstage during resize!\n");
+            return false;
+		}
+    }
 
-	/*
-	 * Try to resize every render stage.
-	 */
-    bool success = true;
+    //Destroy the swap chain and frame buffers.
+    if (!CleanUpSwapChain())
+    {
+        printf("Could not clean up swap chain and frame buffers during resize!\n");
+        return false;
+    }
+
+	//Make a new swap chain.
+    if (!CreateSwapChain())
+    {
+        printf("Could not init swap chain during resize!\n");
+        return false;
+    }
+
+	//Initialize all the render stages.
 	for(auto& stage : m_RenderStages)
 	{
-        if(!stage->Resize(m_RenderData))
+        if(!stage->Init(m_RenderData))
         {
-            success = false;
-            break;
+            printf("Could not init renderstage during resize!\n");
+            return false;
         }
 	}
+
+	//Create the frame buffers and semaphores/fences.
+	//This happens after the render stages because a render pass has to be defined by the last stage.
+	//This pass is then passed into the FBO create struct.
+    if(!CreateSwapChainFrameData())
+    {
+        printf("Could not init frame buffers during resize.\n");
+        return false;
+    }
+
+	//Lastly retrieve the first frame's index.
+	if(!AcquireSwapChainIndex())
+	{
+        printf("Could not acquire swap chain index for next frame during resize!\n");
+        return false;
+	}
 	
-    return success;
+    return true;
 }
 
 bool Renderer::CleanUp()
@@ -148,19 +219,10 @@ bool Renderer::CleanUp()
     {
         vkFreeCommandBuffers(m_RenderData.m_Device, frame.m_CommandPool, 1, &frame.m_CommandBuffer);
         vkDestroyCommandPool(m_RenderData.m_Device, frame.m_CommandPool, nullptr);
-        vkDestroyFence(m_RenderData.m_Device, frame.m_Fence, nullptr);
-        vkDestroySemaphore(m_RenderData.m_Device, frame.m_WaitForFrameSemaphore, nullptr);
-        vkDestroySemaphore(m_RenderData.m_Device, frame.m_WaitForRenderSemaphore, nullptr);
-        vkDestroyFramebuffer(m_RenderData.m_Device, frame.m_FrameBuffer, nullptr);
     }
 
-    //Destroy all allocated memory.
-    for(auto& view : m_SwapViews)
-    {
-        vkDestroyImageView(m_RenderData.m_Device, view, nullptr);
-    }
-
-    vkDestroySwapchainKHR(m_RenderData.m_Device, m_SwapChain, nullptr);
+	//Clean the swapchain and associated frame buffers.
+    CleanUpSwapChain();
 
     vkFreeCommandBuffers(m_RenderData.m_Device, m_CopyCommandPool, 1, &m_CopyBuffer);
     vkDestroyCommandPool(m_RenderData.m_Device, m_CopyCommandPool, nullptr);
@@ -764,6 +826,20 @@ bool Renderer::InitMemoryAllocator()
     return true;
 }
 
+bool Renderer::AcquireSwapChainIndex()
+{
+    //Assign the frame index to be 0
+    m_FrameReadySemaphore = m_RenderData.m_FrameData[m_RenderData.m_Settings.m_SwapBufferCount - 1].m_WaitForFrameSemaphore;   //Semaphore for the frame before this is used.
+    vkAcquireNextImageKHR(m_RenderData.m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), m_FrameReadySemaphore, nullptr, &m_CurrentFrameIndex);
+    if (m_CurrentFrameIndex != 0)
+    {
+        printf("First frame index is not 0! This doesn't work with my setup.\n");
+        return false;
+    }
+
+    return true;
+}
+
 bool Renderer::CreateSwapChain()
 {
     //The surface data required for the swap chain.
@@ -784,6 +860,10 @@ bool Renderer::CreateSwapChain()
     if (surfaceCapabilities.currentExtent.width != UINT32_MAX) 
     {
         swapExtent = surfaceCapabilities.currentExtent;
+
+    	//Also overwrite the settings because it's not supported.
+        m_RenderData.m_Settings.resolutionX = swapExtent.width;
+        m_RenderData.m_Settings.resolutionY = swapExtent.height;
     }
 
     /*
@@ -866,6 +946,71 @@ bool Renderer::CreateSwapChain()
     return true;
 }
 
+bool Renderer::CreateSwapChainFrameData()
+{
+	for(int frameIndex = 0; frameIndex < m_RenderData.m_Settings.m_SwapBufferCount; ++frameIndex)
+	{
+        auto& frameData = m_RenderData.m_FrameData[frameIndex];
+        VkImageView attachments[] = { m_SwapViews[frameIndex] };    //image view corresponding with the swapchain index for this frame.
+
+        VkFramebufferCreateInfo fboInfo{};
+        fboInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fboInfo.renderPass = m_DeferredStage->GetRenderPass();   //TODO: replace this with the actual last output stage before the frame ends.
+        fboInfo.attachmentCount = 1;
+        fboInfo.pAttachments = attachments;
+        fboInfo.width = m_RenderData.m_Settings.resolutionX;
+        fboInfo.height = m_RenderData.m_Settings.resolutionY;
+        fboInfo.layers = 1;
+
+        if (vkCreateFramebuffer(m_RenderData.m_Device, &fboInfo, nullptr, &frameData.m_FrameBuffer) != VK_SUCCESS)
+        {
+            printf("Could not create FBO for frame index %i!\n", frameIndex);
+            return false;
+        }
+
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = VkFenceCreateFlagBits::VK_FENCE_CREATE_SIGNALED_BIT;  //Signal by default so that the frame is marked as available.
+        if (vkCreateFence(m_RenderData.m_Device, &fenceInfo, nullptr, &frameData.m_Fence) != VK_SUCCESS)
+        {
+            printf("Could not create fence for frame!\n");
+            return false;
+        }
+
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        if (vkCreateSemaphore(m_RenderData.m_Device, &semaphoreInfo, nullptr, &frameData.m_WaitForFrameSemaphore) != VK_SUCCESS || vkCreateSemaphore(m_RenderData.m_Device, &semaphoreInfo, nullptr, &frameData.m_WaitForRenderSemaphore) != VK_SUCCESS)
+        {
+            printf("Could not create semaphore for frame!\n");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool Renderer::CleanUpSwapChain()
+{
+    //Destroy frame buffers and such. Also synchronization objects.
+    for (auto& frame : m_RenderData.m_FrameData)
+    {
+        vkDestroyFramebuffer(m_RenderData.m_Device, frame.m_FrameBuffer, nullptr);
+        vkDestroyFence(m_RenderData.m_Device, frame.m_Fence, nullptr);
+        vkDestroySemaphore(m_RenderData.m_Device, frame.m_WaitForFrameSemaphore, nullptr);
+        vkDestroySemaphore(m_RenderData.m_Device, frame.m_WaitForRenderSemaphore, nullptr);
+    }
+
+    for (auto& view : m_SwapViews)
+    {
+        vkDestroyImageView(m_RenderData.m_Device, view, nullptr);
+    }
+
+    vkDestroySwapchainKHR(m_RenderData.m_Device, m_SwapChain, nullptr);
+	
+    return true;
+}
+
 bool Renderer::InitPipeline()
 {
 
@@ -936,53 +1081,6 @@ bool Renderer::InitPipeline()
             printf("Could not create graphics command buffer for frame index %i!\n", frameIndex);
             return false;
         }
-
-        VkFenceCreateInfo fenceInfo{};
-        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fenceInfo.flags = VkFenceCreateFlagBits::VK_FENCE_CREATE_SIGNALED_BIT;  //Signal by default so that the frame is marked as available.
-        if (vkCreateFence(m_RenderData.m_Device, &fenceInfo, nullptr, &frameData.m_Fence) != VK_SUCCESS)
-        {
-            printf("Could not create fence for frame index %i!\n", frameIndex);
-            return false;
-        }
-
-        VkSemaphoreCreateInfo semaphoreInfo{};
-        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-        if (vkCreateSemaphore(m_RenderData.m_Device, &semaphoreInfo, nullptr, &frameData.m_WaitForFrameSemaphore) != VK_SUCCESS || vkCreateSemaphore(m_RenderData.m_Device, &semaphoreInfo, nullptr, &frameData.m_WaitForRenderSemaphore) != VK_SUCCESS)
-        {
-            printf("Could not create semaphore for frame index %i!\n", frameIndex);
-            return false;
-        }
-
-        /*
-         * Set up a frame buffer that allows the shaders to actually output to the swapchain images.
-         */
-        VkImageView attachments[] = { m_SwapViews[frameIndex] };    //image view corresponding with the swapchain index for this frame.
-
-        VkFramebufferCreateInfo fboInfo{};
-        fboInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        fboInfo.renderPass = m_DeferredStage->GetRenderPass();   //TODO: replace this with the actual last output stage before the frame ends.
-        fboInfo.attachmentCount = 1;
-        fboInfo.pAttachments = attachments;
-        fboInfo.width = m_RenderData.m_Settings.resolutionX;
-        fboInfo.height = m_RenderData.m_Settings.resolutionY;
-        fboInfo.layers = 1;
-
-        if (vkCreateFramebuffer(m_RenderData.m_Device, &fboInfo, nullptr, &frameData.m_FrameBuffer) != VK_SUCCESS)
-        {
-            printf("Could not create FBO for frame index %i!\n", frameIndex);
-            return false;
-        }
-    }
-
-    //Assign the frame index to be 0
-    m_FrameReadySemaphore = m_RenderData.m_FrameData[m_RenderData.m_Settings.m_SwapBufferCount - 1].m_WaitForFrameSemaphore;   //Semaphore for the frame before this is used.
-    vkAcquireNextImageKHR(m_RenderData.m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), m_FrameReadySemaphore, nullptr, &m_CurrentFrameIndex);
-    if (m_CurrentFrameIndex != 0)
-    {
-        printf("First frame index is not 0! This doesn't work with my setup.\n");
-        return false;
     }
 
     printf("Successfully created graphics pipeline!\n");

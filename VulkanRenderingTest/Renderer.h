@@ -221,9 +221,26 @@ private:
 	bool InitMemoryAllocator();
 
 	/*
+	 * Acquire the swap chain index for the next frame.
+	 */
+	bool AcquireSwapChainIndex();
+
+	/*
 	 * Initialize the Vulkan swapchain.
 	 */
 	bool CreateSwapChain();
+
+	/*
+	 * Create the frame buffers and synchronization objects for the swap chain.
+	 * 
+	 */
+	bool CreateSwapChainFrameData();
+	
+	/*
+	 * Destroy the swapchain and associated render targets.
+	 * Also cleans up any synchronisation objects.
+	 */
+	bool CleanUpSwapChain();
 
 	/*
      * Create the pipeline related objects.
