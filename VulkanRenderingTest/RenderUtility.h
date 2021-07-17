@@ -28,7 +28,7 @@ public:
 	/*
 	 * Load a Spir-V shader from file and compile it.
 	 */
-	static bool CreateShaderModuleFromSpirV(const std::string& a_File, VkShaderModule& a_Output, VkDevice& a_Device)
+	static bool CreateShaderModuleFromSpirV(const std::string& a_File, VkShaderModule& a_Output, const VkDevice& a_Device)
 	{
 	    std::vector<char> byteCode;
 	    if (!ReadFile(a_File, byteCode))

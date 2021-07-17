@@ -12,7 +12,13 @@
 
 bool Renderer::Init(const RendererSettings& a_Settings)
 {
-    m_Settings = a_Settings;
+	if(m_Initialized)
+	{
+        printf("Cannot initialize renderer: already initialized!\n");
+        return false;
+	}
+	
+    m_RenderData.m_Settings = a_Settings;
 
 	/*
 	 * Init GLFW and ensure that it supports Vulkan.
@@ -34,7 +40,7 @@ bool Renderer::Init(const RendererSettings& a_Settings)
     // With GLFW_CLIENT_API set to GLFW_NO_API there will be no OpenGL (ES) context.
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    m_Window = glfwCreateWindow(a_Settings.windowWidth, a_Settings.windowHeight, "Vulkan Render Test", nullptr, nullptr);
+    m_Window = glfwCreateWindow(a_Settings.resolutionX, a_Settings.resolutionY, "Vulkan Render Test", nullptr, nullptr);
 
 
     //Try to initialize the vulkan context.
@@ -75,6 +81,35 @@ bool Renderer::Init(const RendererSettings& a_Settings)
 	return true;
 }
 
+bool Renderer::Resize(std::uint32_t a_Width, std::uint32_t a_Height)
+{
+	/*
+	 * Update the settings.
+	 */
+    m_RenderData.m_Settings.resolutionX = a_Width;
+    m_RenderData.m_Settings.resolutionY = a_Height;
+
+	/*
+	 * Resize the swapchain.
+	 */
+	//TODO resize swapchain. Maybe wait for it to be all out of flight?
+
+	/*
+	 * Try to resize every render stage.
+	 */
+    bool success = true;
+	for(auto& stage : m_RenderStages)
+	{
+        if(!stage->Resize(m_RenderData))
+        {
+            success = false;
+            break;
+        }
+	}
+	
+    return success;
+}
+
 bool Renderer::CleanUp()
 {
     if(!m_Initialized)
@@ -83,11 +118,17 @@ bool Renderer::CleanUp()
         return false;
     }
 
+	//Wait for the pipeline to finish.
+	for(auto& frame : m_RenderData.m_FrameData)
+	{
+        vkWaitForFences(m_RenderData.m_Device, 1, &frame.m_Fence, true, std::numeric_limits<uint32_t>::max());
+	}
+
     //Free all meshes.
     for(auto& mesh : m_Meshes)
     {
         //Destroy the buffers.
-        vmaDestroyBuffer(m_Allocator, mesh->GetBuffer(), mesh->GetAllocation());
+        vmaDestroyBuffer(m_RenderData.m_Allocator, mesh->GetBuffer(), mesh->GetAllocation());
     }
     m_Meshes.clear();
 
@@ -95,36 +136,40 @@ bool Renderer::CleanUp()
 
 	/*
 	 * Clean up the render stages.
+	 * This happens in reverse order.
 	 */
-    m_DeferredStage.CleanUp(m_Device);
+    for(int i = m_RenderStages.size() - 1; i >= 0; --i)
+    {
+        m_RenderStages[i]->CleanUp(m_RenderData);
+    }
 
     //Destroy the resources per frame.
-    for(auto& frame : m_FrameData)
+    for(auto& frame : m_RenderData.m_FrameData)
     {
-        vkFreeCommandBuffers(m_Device, frame.m_CommandPool, 1, &frame.m_CommandBuffer);
-        vkDestroyCommandPool(m_Device, frame.m_CommandPool, nullptr);
-        vkDestroyFence(m_Device, frame.m_Fence, nullptr);
-        vkDestroySemaphore(m_Device, frame.m_WaitForFrameSemaphore, nullptr);
-        vkDestroySemaphore(m_Device, frame.m_WaitForRenderSemaphore, nullptr);
-        vkDestroyFramebuffer(m_Device, frame.m_FrameBuffer, nullptr);
+        vkFreeCommandBuffers(m_RenderData.m_Device, frame.m_CommandPool, 1, &frame.m_CommandBuffer);
+        vkDestroyCommandPool(m_RenderData.m_Device, frame.m_CommandPool, nullptr);
+        vkDestroyFence(m_RenderData.m_Device, frame.m_Fence, nullptr);
+        vkDestroySemaphore(m_RenderData.m_Device, frame.m_WaitForFrameSemaphore, nullptr);
+        vkDestroySemaphore(m_RenderData.m_Device, frame.m_WaitForRenderSemaphore, nullptr);
+        vkDestroyFramebuffer(m_RenderData.m_Device, frame.m_FrameBuffer, nullptr);
     }
 
     //Destroy all allocated memory.
     for(auto& view : m_SwapViews)
     {
-        vkDestroyImageView(m_Device, view, nullptr);
+        vkDestroyImageView(m_RenderData.m_Device, view, nullptr);
     }
 
-    vkDestroySwapchainKHR(m_Device, m_SwapChain, nullptr);
+    vkDestroySwapchainKHR(m_RenderData.m_Device, m_SwapChain, nullptr);
 
-    vkFreeCommandBuffers(m_Device, m_CopyCommandPool, 1, &m_CopyBuffer);
-    vkDestroyCommandPool(m_Device, m_CopyCommandPool, nullptr);
+    vkFreeCommandBuffers(m_RenderData.m_Device, m_CopyCommandPool, 1, &m_CopyBuffer);
+    vkDestroyCommandPool(m_RenderData.m_Device, m_CopyCommandPool, nullptr);
 
-    vkDestroySurfaceKHR(m_VulkanInstance, m_Surface, nullptr);
+    vkDestroySurfaceKHR(m_RenderData.m_VulkanInstance, m_RenderData.m_Surface, nullptr);
 
-    vmaDestroyAllocator(m_Allocator);
-    vkDestroyDevice(m_Device, nullptr);
-    vkDestroyInstance(m_VulkanInstance, nullptr);
+    vmaDestroyAllocator(m_RenderData.m_Allocator);
+    vkDestroyDevice(m_RenderData.m_Device, nullptr);
+    vkDestroyInstance(m_RenderData.m_VulkanInstance, nullptr);
 
     glfwDestroyWindow(m_Window);
 
@@ -132,17 +177,14 @@ bool Renderer::CleanUp()
 }
 
 Renderer::Renderer() :
-            m_Initialized(false),
-            m_Window(nullptr),
-            m_VulkanInstance(nullptr),
-            m_PhysicalDevice(nullptr),
-            m_Device(nullptr),
-            m_Surface(nullptr),
-            m_Queues{},
-            m_SwapChain(nullptr),
-            m_CopyBuffer(nullptr),
-            m_CopyCommandPool(nullptr),
-            m_Allocator(nullptr)
+	m_Initialized(false),
+	m_Window(nullptr),
+	m_SwapChain(nullptr),
+	m_CopyBuffer(nullptr),
+	m_CopyCommandPool(nullptr),
+	m_CurrentFrameIndex(0),
+	m_FrameReadySemaphore(nullptr),
+	m_DeferredStage(nullptr)
 {
 }
 
@@ -156,17 +198,17 @@ bool Renderer::Run()
     }
 
     //The frame data for the current frame.
-    auto& frameData = m_FrameData[m_CurrentFrameIndex];
+    auto& frameData = m_RenderData.m_FrameData[m_CurrentFrameIndex];
     auto& cmdBuffer = frameData.m_CommandBuffer;
 
     //Ensure that command buffer execution is done for this frame by waiting for fence completion.
-    vkWaitForFences(m_Device, 1, &frameData.m_Fence, true, std::numeric_limits<std::uint32_t>::max());
+    vkWaitForFences(m_RenderData.m_Device, 1, &frameData.m_Fence, true, std::numeric_limits<std::uint32_t>::max());
 
     //Reset the fence now that it has been signaled.
-    vkResetFences(m_Device, 1, &frameData.m_Fence);
+    vkResetFences(m_RenderData.m_Device, 1, &frameData.m_Fence);
 
     //Prepare the command buffer for rendering
-    vkResetCommandPool(m_Device, frameData.m_CommandPool, 0);
+    vkResetCommandPool(m_RenderData.m_Device, frameData.m_CommandPool, 0);
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VkCommandBufferUsageFlagBits::VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -177,10 +219,19 @@ bool Renderer::Run()
         return false;
     }
 
+	//All semapores the command buffer should wait for and signal.
+    std::vector<VkSemaphore> waitSemaphores;
+    std::vector<VkSemaphore> signalSemaphores;
+    std::vector<VkPipelineStageFlags> waitStageFlags;       //The stages the wait semaphores should wait in.
+
     /*
      * Execute all the render stages.
      */
-    m_DeferredStage.RecordCommandBuffer(m_Settings, cmdBuffer, m_CurrentFrameIndex, frameData);
+	for(auto& stage : m_RenderStages)
+	{
+		//These functions may add waiting dependencies to the semaphore vectors.
+        stage->RecordCommandBuffer(m_RenderData, cmdBuffer, m_CurrentFrameIndex, waitSemaphores, signalSemaphores, waitStageFlags);
+	}
 
 	/*
 	 * Finally end the command list and submit it.
@@ -191,19 +242,30 @@ bool Renderer::Run()
         return false;
     }
 
+	//Ensure that the command buffer waits for the frame to be ready, and signals to the swapchain that it's ready to be presented.
+    signalSemaphores.push_back(frameData.m_WaitForRenderSemaphore);
+    waitSemaphores.push_back(m_FrameReadySemaphore);
+    waitStageFlags.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);    //Last added semaphore should wait before outputting any data.
+
+	//Ensure that the semaphore buffers are the right size.
+	if(waitStageFlags.size() != waitSemaphores.size())
+	{
+        printf("Error: wait semaphores and wait stages do not match in size. Every wait needs a stage defined!\n");
+        return false;
+	}
+
     //Submit the command queue. Signal the fence once done.
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &frameData.m_CommandBuffer;
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &frameData.m_WaitForRenderSemaphore;                 //Signal this semaphore when done so that the image is presented.
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &m_FrameReadySemaphore;                                //Wait for this semaphore so that the frame buffer is actually available when the rendering happens.
-    VkPipelineStageFlags wait[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };    //Semaphore should wait for this stage: outputting from fragment shader.
-    submitInfo.pWaitDstStageMask = wait;                                                //Corresponds with the semaphore index.
-
-    vkQueueSubmit(m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_Queue, 1, &submitInfo, frameData.m_Fence);
+    submitInfo.signalSemaphoreCount = static_cast<uint32_t>(signalSemaphores.size());
+    submitInfo.pSignalSemaphores = signalSemaphores.data();                             //Signal this semaphore when done so that the image is presented.
+    submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
+    submitInfo.pWaitSemaphores = waitSemaphores.data();                                 //Wait for this semaphore so that the frame buffer is actually available when the rendering happens.
+    submitInfo.pWaitDstStageMask = waitStageFlags.data();
+	
+    vkQueueSubmit(m_RenderData.m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_Queue, 1, &submitInfo, frameData.m_Fence);
 
     //Start building the command buffer.
     VkPresentInfoKHR presentInfo{};
@@ -214,7 +276,7 @@ bool Renderer::Run()
     presentInfo.pSwapchains = &m_SwapChain;
     presentInfo.pImageIndices = &m_CurrentFrameIndex;
     presentInfo.pResults = nullptr;
-    vkQueuePresentKHR(m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_Queue, &presentInfo);
+    vkQueuePresentKHR(m_RenderData.m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_Queue, &presentInfo);
 
     //Destroy unused meshes. Ensure that they are not in flight by keeping a reference of them in the renderer when on the GPU.
     auto itr = m_Meshes.begin();
@@ -223,7 +285,7 @@ bool Renderer::Run()
         if(mesh.use_count() == 1)
         {
             //Destroy the buffers.
-            vmaDestroyBuffer(m_Allocator, mesh->GetBuffer(), mesh->GetAllocation());
+            vmaDestroyBuffer(m_RenderData.m_Allocator, mesh->GetBuffer(), mesh->GetAllocation());
             itr = m_Meshes.erase(itr);
         }
         else
@@ -237,7 +299,7 @@ bool Renderer::Run()
      * The semaphore will be signaled as soon as the frame becomes available.
      * Remember it for the next frame, to be used with the queue submit command.
      */
-    vkAcquireNextImageKHR(m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), frameData.m_WaitForFrameSemaphore, nullptr, &m_CurrentFrameIndex);
+    vkAcquireNextImageKHR(m_RenderData.m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), frameData.m_WaitForFrameSemaphore, nullptr, &m_CurrentFrameIndex);
     m_FrameReadySemaphore = frameData.m_WaitForFrameSemaphore;
 	return true;
 }
@@ -272,7 +334,7 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
     //The GPU buffer and memory now exist.
     VkBuffer buffer;
     VmaAllocation allocation;
-    if (vmaCreateBuffer(m_Allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr) != VK_SUCCESS)
+    if (vmaCreateBuffer(m_RenderData.m_Allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr) != VK_SUCCESS)
     {
         printf("Error! Could not allocate memory for mesh.\n");
         return nullptr;
@@ -283,7 +345,7 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
     VmaAllocation stagingBufferAllocation;
     allocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
     bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    if (vmaCreateBuffer(m_Allocator, &bufferInfo, &allocInfo, &stagingBuffer, &stagingBufferAllocation, nullptr) != VK_SUCCESS)
+    if (vmaCreateBuffer(m_RenderData.m_Allocator, &bufferInfo, &allocInfo, &stagingBuffer, &stagingBufferAllocation, nullptr) != VK_SUCCESS)
     {
         printf("Error! Could not allocate copy memory for mesh.\n");
         return nullptr;
@@ -292,8 +354,8 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
     //Retrieve information about the staging and GPU buffers (handles)
     VmaAllocationInfo stagingBufferInfo;
     VmaAllocationInfo gpuBufferInfo;
-    vmaGetAllocationInfo(m_Allocator, stagingBufferAllocation, &stagingBufferInfo);
-    vmaGetAllocationInfo(m_Allocator, allocation, &gpuBufferInfo);
+    vmaGetAllocationInfo(m_RenderData.m_Allocator, stagingBufferAllocation, &stagingBufferInfo);
+    vmaGetAllocationInfo(m_RenderData.m_Allocator, allocation, &gpuBufferInfo);
 
 
     /*
@@ -301,20 +363,20 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
      */
     void* data;
     //Vertex
-    vkMapMemory(m_Device, stagingBufferInfo.deviceMemory, 0, bufferSize, 0, &data);
+    vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, 0, bufferSize, 0, &data);
     memcpy(data, a_VertexBuffer.data(), vertexSizeBytes);
-    vkUnmapMemory(m_Device, stagingBufferInfo.deviceMemory);
+    vkUnmapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory);
     //Index
-    vkMapMemory(m_Device, stagingBufferInfo.deviceMemory, indexOffset, bufferSize, 0, &data);
+    vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, indexOffset, bufferSize, 0, &data);
     memcpy(data, a_IndexBuffer.data(), indexSizeBytes);
-    vkUnmapMemory(m_Device, stagingBufferInfo.deviceMemory);
+    vkUnmapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory);
 
     /*
      * Copy from the CPU memory to the GPU using a command buffer
      */
 
     //First reset the command pool. This automatically resets all associated buffers as well (if flag was not individual)
-    vkResetCommandPool(m_Device, m_CopyCommandPool, 0);
+    vkResetCommandPool(m_RenderData.m_Device, m_CopyCommandPool, 0);
     //
     VkCommandBufferBeginInfo beginInfo;
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -355,15 +417,15 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = 0;
     fenceInfo.pNext = nullptr;
-    vkCreateFence(m_Device, &fenceInfo, nullptr, &uploadFence);
+    vkCreateFence(m_RenderData.m_Device, &fenceInfo, nullptr, &uploadFence);
 
     //Submit the work and then wait for the fence to be signaled.
-    vkQueueSubmit(m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_TRANSFER)].m_Queue, 1, &submitInfo, uploadFence);
-    vkWaitForFences(m_Device, 1, &uploadFence, true, std::numeric_limits<uint32_t>::max());
+    vkQueueSubmit(m_RenderData.m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_TRANSFER)].m_Queue, 1, &submitInfo, uploadFence);
+    vkWaitForFences(m_RenderData.m_Device, 1, &uploadFence, true, std::numeric_limits<uint32_t>::max());
 
     //Free the staging buffer
-    vmaDestroyBuffer(m_Allocator, stagingBuffer, stagingBufferAllocation);
-    vkDestroyFence(m_Device, uploadFence, nullptr);
+    vmaDestroyBuffer(m_RenderData.m_Allocator, stagingBuffer, stagingBufferAllocation);
+    vkDestroyFence(m_RenderData.m_Device, uploadFence, nullptr);
 
     //Finally create a shared pointer and return a copy of it after putting it in the registry.
     auto ptr = std::make_shared<Mesh>(allocation, buffer, a_IndexBuffer.size(), a_VertexBuffer.size(), indexOffset, vertexOffset);
@@ -409,14 +471,14 @@ bool Renderer::InitVulkan()
         createInfo.pApplicationInfo = &appInfo;
         createInfo.enabledLayerCount = 0;   //0 by default, but can be enabled below.
 
-        if (m_Settings.enableDebugMode)
+        if (m_RenderData.m_Settings.enableDebugMode)
         {
             //Add the debug callback extension and configure it.
             extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
             debug.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
             debug.flags = 0;
             debug.pNext = nullptr;
-            debug.messageSeverity = static_cast<uint32_t>(m_Settings.debugFlags);    //These flags correspond to the Vk Enumeration.
+            debug.messageSeverity = static_cast<uint32_t>(m_RenderData.m_Settings.debugFlags);    //These flags correspond to the Vk Enumeration.
             debug.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
                 | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
                 | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;                      //Print everything basically.
@@ -468,7 +530,7 @@ bool Renderer::InitVulkan()
     }
 
     //Create the actual instance.
-    const auto initResult = vkCreateInstance(&createInfo, nullptr, &m_VulkanInstance);
+    const auto initResult = vkCreateInstance(&createInfo, nullptr, &m_RenderData.m_VulkanInstance);
     if (initResult != VK_SUCCESS)
     {
         printf("Could not create Vulkan instance. Cause: %u\n", initResult);
@@ -480,7 +542,7 @@ bool Renderer::InitVulkan()
     /*
      * Bind GLFW and Vulkan.
      */
-    const auto result = glfwCreateWindowSurface(m_VulkanInstance, m_Window, NULL, &m_Surface);
+    const auto result = glfwCreateWindowSurface(m_RenderData.m_VulkanInstance, m_Window, NULL, &m_RenderData.m_Surface);
     if (result != VK_SUCCESS)
     {
         printf("Could not create window surface for Vulkan and GLFW.\n");
@@ -496,7 +558,7 @@ bool Renderer::InitDevice()
      * Find the most suitable GPU.
      */
     uint32_t deviceCount = 0;
-    vkEnumeratePhysicalDevices(m_VulkanInstance, &deviceCount, nullptr);
+    vkEnumeratePhysicalDevices(m_RenderData.m_VulkanInstance, &deviceCount, nullptr);
 
     if (deviceCount == 0)
     {
@@ -506,7 +568,7 @@ bool Renderer::InitDevice()
 
     // Retrieve all the devices available on this PC.
     std::vector<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(m_VulkanInstance, &deviceCount, devices.data());
+    vkEnumeratePhysicalDevices(m_RenderData.m_VulkanInstance, &deviceCount, devices.data());
 
     /*
      * Note to self:
@@ -516,13 +578,13 @@ bool Renderer::InitDevice()
      * Then I guess the function would create these queue objects if they are valid for the GPU selected.
      */
 
-    if (deviceCount <= m_Settings.gpuIndex)
+    if (deviceCount <= m_RenderData.m_Settings.gpuIndex)
     {
         printf("Invalid GPU index specified in renderer settings. Not that many devices.\n");
         return false;
     }
 
-    auto& device = devices[m_Settings.gpuIndex];
+    auto& device = devices[m_RenderData.m_Settings.gpuIndex];
 
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);   //So this has to be called to allocate the space...
@@ -530,7 +592,7 @@ bool Renderer::InitDevice()
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());  //And then called again to actually write to it. ..... .. ... 
 
     //Assign the device.
-    m_PhysicalDevice = device;
+    m_RenderData.m_PhysicalDevice = device;
 
     //Keep track of the queue indices and whether or not a queue was found yet.
     bool queueFound[3] = {false, false, false};
@@ -554,7 +616,7 @@ bool Renderer::InitDevice()
         if (queueFamily.queueFlags & queueFlags[0] && !queueFound[static_cast<uint32_t>(QueueType::QUEUE_TYPE_GRAPHICS)])
         {
             VkBool32 presentSupport;
-            vkGetPhysicalDeviceSurfaceSupportKHR(device, queueFamilyIdx, m_Surface, &presentSupport);
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, queueFamilyIdx, m_RenderData.m_Surface, &presentSupport);
             if (presentSupport)
             {
                 queueFound[0] = true;
@@ -597,7 +659,7 @@ bool Renderer::InitDevice()
         }
     }
 
-    if (m_PhysicalDevice == VK_NULL_HANDLE)
+    if (m_RenderData.m_PhysicalDevice == VK_NULL_HANDLE)
     {
         printf("Could not find suitable GPU for Vulkan.\n");
         return false;
@@ -654,7 +716,7 @@ bool Renderer::InitDevice()
         createInfo.ppEnabledExtensionNames = swapchainExtensions.data();
         createInfo.enabledLayerCount = 0;
 
-        if (m_Settings.enableDebugMode) 
+        if (m_RenderData.m_Settings.enableDebugMode)
         {
             // To have device level validation information, the layers are added here.
             createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
@@ -663,7 +725,7 @@ bool Renderer::InitDevice()
     }
 
     //Create the logical device instance.
-    if (vkCreateDevice(m_PhysicalDevice, &createInfo, nullptr, &m_Device) != VK_SUCCESS) 
+    if (vkCreateDevice(m_RenderData.m_PhysicalDevice, &createInfo, nullptr, &m_RenderData.m_Device) != VK_SUCCESS)
     {
         printf("Could not create Vulkan logical device.\n");
         return false;
@@ -678,8 +740,8 @@ bool Renderer::InitDevice()
         QueueInfo info;
         info.m_FamilyIndex = queueFamIndex[i];
         info.m_QueueIndex = queueIndex[i];
-        vkGetDeviceQueue(m_Device, queueFamIndex[i], queueIndex[i], &info.m_Queue);
-        m_Queues[i] = info;
+        vkGetDeviceQueue(m_RenderData.m_Device, queueFamIndex[i], queueIndex[i], &info.m_Queue);
+        m_RenderData.m_Queues[i] = info;
     }
 
     printf("Vulkan device and queues successfully initialized.\n");
@@ -690,10 +752,10 @@ bool Renderer::InitMemoryAllocator()
 {
     VmaAllocatorCreateInfo allocatorInfo = {};
     allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_2;
-    allocatorInfo.physicalDevice = m_PhysicalDevice;
-    allocatorInfo.device = m_Device;
-    allocatorInfo.instance = m_VulkanInstance;
-    if(vmaCreateAllocator(&allocatorInfo, &m_Allocator) != VK_SUCCESS)
+    allocatorInfo.physicalDevice = m_RenderData.m_PhysicalDevice;
+    allocatorInfo.device = m_RenderData.m_Device;
+    allocatorInfo.instance = m_RenderData.m_VulkanInstance;
+    if(vmaCreateAllocator(&allocatorInfo, &m_RenderData.m_Allocator) != VK_SUCCESS)
     {
         printf("Vma could not be initialized.\n");
         return false;
@@ -705,18 +767,18 @@ bool Renderer::InitMemoryAllocator()
 bool Renderer::CreateSwapChain()
 {
     //The surface data required for the swap chain.
-    VkExtent2D swapExtent = { m_Settings.windowWidth, m_Settings.windowHeight };
+    VkExtent2D swapExtent = { m_RenderData.m_Settings.resolutionX, m_RenderData.m_Settings.resolutionY };
 
     //This can be queried, but I don't do that because it's extra effort.
     //Not all surfaces support all formats and spaces.
     //I just force these, and if not supported I can always adjusted.
     VkSurfaceFormatKHR surfaceFormat;
     surfaceFormat.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-    surfaceFormat.format = m_Settings.outputFormat;
+    surfaceFormat.format = m_RenderData.m_Settings.outputFormat;
 
     //Query the capabilities for the physical device and surface that were created earlier.
     VkSurfaceCapabilitiesKHR surfaceCapabilities;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_PhysicalDevice, m_Surface, &surfaceCapabilities);
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_RenderData.m_PhysicalDevice, m_RenderData.m_Surface, &surfaceCapabilities);
 
     //If max int is defined in the surface current extent, it means the swapchain can decide. If it is something else, that's the one that is required.
     if (surfaceCapabilities.currentExtent.width != UINT32_MAX) 
@@ -728,16 +790,15 @@ bool Renderer::CreateSwapChain()
      * Create the swap chain images.
      */
     uint32_t swapBufferCount = surfaceCapabilities.minImageCount + 1;
-    swapBufferCount = std::max(swapBufferCount, m_Settings.m_SwapBufferCount);
+    swapBufferCount = std::max(swapBufferCount, m_RenderData.m_Settings.m_SwapBufferCount);
     swapBufferCount = std::min(surfaceCapabilities.maxImageCount, swapBufferCount);
-    m_Settings.m_SwapBufferCount = swapBufferCount;
+    m_RenderData.m_Settings.m_SwapBufferCount = swapBufferCount;
 	
-    m_NumFrames = swapBufferCount;  //Store for later use.
     VkSwapchainCreateInfoKHR swapChainInfo;
     swapChainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     swapChainInfo.pNext = NULL;
     swapChainInfo.flags = 0;
-    swapChainInfo.surface = m_Surface;
+    swapChainInfo.surface = m_RenderData.m_Surface;
     swapChainInfo.minImageCount = swapBufferCount;
     swapChainInfo.imageFormat = surfaceFormat.format;
     swapChainInfo.imageColorSpace = surfaceFormat.colorSpace;
@@ -749,12 +810,12 @@ bool Renderer::CreateSwapChain()
     swapChainInfo.pQueueFamilyIndices = NULL;                           //Again only relevant when set to concurrent.
     swapChainInfo.preTransform = surfaceCapabilities.currentTransform;
     swapChainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    swapChainInfo.presentMode = m_Settings.vSync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR;
+    swapChainInfo.presentMode = m_RenderData.m_Settings.vSync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR;
     swapChainInfo.clipped = VK_TRUE;
     swapChainInfo.oldSwapchain = VK_NULL_HANDLE;
 
     //Creat the swap chain.
-    if (vkCreateSwapchainKHR(m_Device, &swapChainInfo, NULL, &m_SwapChain) != VK_SUCCESS) 
+    if (vkCreateSwapchainKHR(m_RenderData.m_Device, &swapChainInfo, NULL, &m_SwapChain) != VK_SUCCESS)
     {
         printf("Could not create SwapChain for Vulkan.\n");
         return false;
@@ -763,9 +824,9 @@ bool Renderer::CreateSwapChain()
     //Now query for the swap chains images and initialize them as render targets.
     std::vector<VkImage> swapBuffers;
     uint32_t bufferCount;
-    vkGetSwapchainImagesKHR(m_Device, m_SwapChain, &bufferCount, NULL);
+    vkGetSwapchainImagesKHR(m_RenderData.m_Device, m_SwapChain, &bufferCount, NULL);
     swapBuffers.resize(bufferCount);
-    vkGetSwapchainImagesKHR(m_Device, m_SwapChain, &bufferCount, swapBuffers.data());
+    vkGetSwapchainImagesKHR(m_RenderData.m_Device, m_SwapChain, &bufferCount, swapBuffers.data());
 
     //Create the views for the swap chain.
     m_SwapViews.resize(swapBuffers.size());
@@ -793,7 +854,7 @@ bool Renderer::CreateSwapChain()
     {
         createInfo.image = swapBuffers[i];
 
-        if (vkCreateImageView(m_Device, &createInfo, nullptr, &m_SwapViews[i]) != VK_SUCCESS) 
+        if (vkCreateImageView(m_RenderData.m_Device, &createInfo, nullptr, &m_SwapViews[i]) != VK_SUCCESS)
         {
             printf("Could not create image view for swap chain!\n");
             return false;
@@ -816,8 +877,8 @@ bool Renderer::InitPipeline()
     copyPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     copyPoolInfo.pNext = nullptr;
     copyPoolInfo.flags = 0;
-    copyPoolInfo.queueFamilyIndex = m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_TRANSFER)].m_FamilyIndex;
-    if (vkCreateCommandPool(m_Device, &copyPoolInfo, nullptr, &m_CopyCommandPool) != VK_SUCCESS)
+    copyPoolInfo.queueFamilyIndex = m_RenderData.m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_TRANSFER)].m_FamilyIndex;
+    if (vkCreateCommandPool(m_RenderData.m_Device, &copyPoolInfo, nullptr, &m_CopyCommandPool) != VK_SUCCESS)
     {
         printf("Could not create copy command pool!\n");
         return false;
@@ -830,27 +891,35 @@ bool Renderer::InitPipeline()
     copyCommandBufferInfo.level = VkCommandBufferLevel::VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     copyCommandBufferInfo.pNext = nullptr;
     copyCommandBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    vkAllocateCommandBuffers(m_Device, &copyCommandBufferInfo, &m_CopyBuffer);
+    vkAllocateCommandBuffers(m_RenderData.m_Device, &copyCommandBufferInfo, &m_CopyBuffer);
 
+    /*
+     * Add all the stages to the stage buffer.
+     */
+    m_DeferredStage = AddRenderStage<RenderStage_Deferred>(std::make_unique<RenderStage_Deferred>());
+	
     /*
      * Init the render stages for each frame.
      */
-    m_DeferredStage.Init(m_Settings, m_Settings.m_SwapBufferCount, m_Device);
+	for(auto& stage : m_RenderStages)
+	{
+        stage->Init(m_RenderData);
+	}
 
     /*
      * Set up the resources for each frame.
      */
-    m_FrameData.resize(m_NumFrames);
-    for (auto frameIndex = 0u; frameIndex < m_NumFrames; ++frameIndex)
+    m_RenderData.m_FrameData.resize(m_RenderData.m_Settings.m_SwapBufferCount);
+    for (auto frameIndex = 0u; frameIndex < m_RenderData.m_Settings.m_SwapBufferCount; ++frameIndex)
     {
-        auto& frameData = m_FrameData[frameIndex];
+        auto& frameData = m_RenderData.m_FrameData[frameIndex];
 
         VkCommandPoolCreateInfo poolInfo{};
-        poolInfo.queueFamilyIndex = m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_FamilyIndex;
+        poolInfo.queueFamilyIndex = m_RenderData.m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_FamilyIndex;
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         poolInfo.flags = 0;
 
-        if (vkCreateCommandPool(m_Device, &poolInfo, nullptr, &frameData.m_CommandPool) != VK_SUCCESS)
+        if (vkCreateCommandPool(m_RenderData.m_Device, &poolInfo, nullptr, &frameData.m_CommandPool) != VK_SUCCESS)
         {
             printf("Could not create graphics command pool for frame index %i!\n", frameIndex);
             return false;
@@ -862,7 +931,7 @@ bool Renderer::InitPipeline()
         bufferInfo.level = VkCommandBufferLevel::VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         bufferInfo.commandPool = frameData.m_CommandPool;
 
-        if (vkAllocateCommandBuffers(m_Device, &bufferInfo, &frameData.m_CommandBuffer) != VK_SUCCESS)
+        if (vkAllocateCommandBuffers(m_RenderData.m_Device, &bufferInfo, &frameData.m_CommandBuffer) != VK_SUCCESS)
         {
             printf("Could not create graphics command buffer for frame index %i!\n", frameIndex);
             return false;
@@ -871,7 +940,7 @@ bool Renderer::InitPipeline()
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fenceInfo.flags = VkFenceCreateFlagBits::VK_FENCE_CREATE_SIGNALED_BIT;  //Signal by default so that the frame is marked as available.
-        if (vkCreateFence(m_Device, &fenceInfo, nullptr, &frameData.m_Fence) != VK_SUCCESS)
+        if (vkCreateFence(m_RenderData.m_Device, &fenceInfo, nullptr, &frameData.m_Fence) != VK_SUCCESS)
         {
             printf("Could not create fence for frame index %i!\n", frameIndex);
             return false;
@@ -880,7 +949,7 @@ bool Renderer::InitPipeline()
         VkSemaphoreCreateInfo semaphoreInfo{};
         semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-        if (vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &frameData.m_WaitForFrameSemaphore) != VK_SUCCESS || vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &frameData.m_WaitForRenderSemaphore) != VK_SUCCESS)
+        if (vkCreateSemaphore(m_RenderData.m_Device, &semaphoreInfo, nullptr, &frameData.m_WaitForFrameSemaphore) != VK_SUCCESS || vkCreateSemaphore(m_RenderData.m_Device, &semaphoreInfo, nullptr, &frameData.m_WaitForRenderSemaphore) != VK_SUCCESS)
         {
             printf("Could not create semaphore for frame index %i!\n", frameIndex);
             return false;
@@ -893,14 +962,14 @@ bool Renderer::InitPipeline()
 
         VkFramebufferCreateInfo fboInfo{};
         fboInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        fboInfo.renderPass = m_DeferredStage.GetRenderPass();   //TODO: replace this with the actual last output stage before the frame ends.
+        fboInfo.renderPass = m_DeferredStage->GetRenderPass();   //TODO: replace this with the actual last output stage before the frame ends.
         fboInfo.attachmentCount = 1;
         fboInfo.pAttachments = attachments;
-        fboInfo.width = m_Settings.windowWidth;
-        fboInfo.height = m_Settings.windowHeight;
+        fboInfo.width = m_RenderData.m_Settings.resolutionX;
+        fboInfo.height = m_RenderData.m_Settings.resolutionY;
         fboInfo.layers = 1;
 
-        if (vkCreateFramebuffer(m_Device, &fboInfo, nullptr, &frameData.m_FrameBuffer) != VK_SUCCESS) 
+        if (vkCreateFramebuffer(m_RenderData.m_Device, &fboInfo, nullptr, &frameData.m_FrameBuffer) != VK_SUCCESS)
         {
             printf("Could not create FBO for frame index %i!\n", frameIndex);
             return false;
@@ -908,8 +977,8 @@ bool Renderer::InitPipeline()
     }
 
     //Assign the frame index to be 0
-    m_FrameReadySemaphore = m_FrameData[m_NumFrames - 1].m_WaitForFrameSemaphore;   //Semaphore for the frame before this is used.
-    vkAcquireNextImageKHR(m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), m_FrameReadySemaphore, nullptr, &m_CurrentFrameIndex);
+    m_FrameReadySemaphore = m_RenderData.m_FrameData[m_RenderData.m_Settings.m_SwapBufferCount - 1].m_WaitForFrameSemaphore;   //Semaphore for the frame before this is used.
+    vkAcquireNextImageKHR(m_RenderData.m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), m_FrameReadySemaphore, nullptr, &m_CurrentFrameIndex);
     if (m_CurrentFrameIndex != 0)
     {
         printf("First frame index is not 0! This doesn't work with my setup.\n");

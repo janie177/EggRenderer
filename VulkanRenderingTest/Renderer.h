@@ -64,14 +64,14 @@ struct RendererSettings
 	std::uint32_t gpuIndex = 0;		
 
 	//Window and swapchain resolution.
-	std::uint32_t windowWidth = 512;
-	std::uint32_t windowHeight = 512;
+	std::uint32_t resolutionX = 512;
+	std::uint32_t resolutionY = 512;
 
 	//Use vsync or not.
 	bool vSync = true;
 
 	//The amount of buffers in the swapchain, 2 or three is preferred. May be changed depending on device minimum and maximum.
-	std::uint32_t m_SwapBufferCount;
+	std::uint32_t m_SwapBufferCount = 2;
 
 	//The clear color for the screen.
 	glm::vec4 clearColor = glm::vec4(0.f, 0.f, 0.f, 1.f);
@@ -126,6 +126,36 @@ private:
 	size_t m_NumVertices;			//The amount of vertices in the vertex buffer.
 };
 
+/*
+ * Struct containing information about the renderer.
+ * This is passed to any rendering stage for access to the pipeline objects.
+ */
+struct RenderData
+{
+	RenderData() : m_VulkanInstance(nullptr),
+	               m_PhysicalDevice(nullptr),
+	               m_Device(nullptr),
+	               m_Surface(nullptr),
+	               m_Queues{},
+	               m_Allocator(nullptr),
+				   m_Settings()
+	{
+	}
+
+	VkInstance m_VulkanInstance;			//The global vulkan context.
+	VkPhysicalDevice m_PhysicalDevice;		//Physical GPU device.
+	VkDevice m_Device;						//Logical device wrapping around physical GPU.
+	VkSurfaceKHR m_Surface;					//The output surface. In this case provided by GLFW.
+	QueueInfo m_Queues[3];					//One queue of each type.
+	VmaAllocator m_Allocator;				//External library handling memory management to keep this project a bit cleaner.
+	std::vector<Frame> m_FrameData;			//Resources for each frame.
+	
+	RendererSettings m_Settings;			//All settings for the renderer.
+};
+
+/*
+ * The main renderer class.
+ */
 class Renderer
 {
 public:
@@ -135,6 +165,11 @@ public:
 	 * Initialize systems.
 	 */
 	bool Init(const RendererSettings& a_Settings);
+
+	/*
+	 * Resize the the rendering output.
+	 */
+	bool Resize(std::uint32_t a_Width, std::uint32_t a_Height);
 
 	/*
 	 * Destroy the renderer.
@@ -153,6 +188,23 @@ public:
 	std::shared_ptr<Mesh> CreateMesh(const std::vector<Vertex>& a_VertexBuffer, const std::vector<std::uint32_t>& a_IndexBuffer);
 
 private:
+	template<typename T>
+	inline T* AddRenderStage(std::unique_ptr<RenderStage>&& a_Stage)
+	{
+		//Ensure the right type is provided.
+		//This only runs at program startup so dynamic cast is fine here.
+		if(dynamic_cast<T*>(a_Stage.get()) == nullptr)
+		{
+			printf("Wrong render stage type provided!");
+			exit(0);
+			return nullptr;
+		}
+		
+		m_RenderStages.emplace_back(std::move(a_Stage));
+		T* ptr = static_cast<T*>(m_RenderStages[m_RenderStages.size() - 1].get());
+		return ptr;
+	}
+	
 	/*
 	 * Initialize Vulkan context and enable debug layers if specified.
 	 */
@@ -196,37 +248,29 @@ private:
     /*
 	 * Main Vulkan objects.
 	 */
-	VkInstance m_VulkanInstance;			//The global vulkan context.
-	VkPhysicalDevice m_PhysicalDevice;		//Physical GPU device.
-	VkDevice m_Device;						//Logical device wrapping around physical GPU.
-	VkSurfaceKHR m_Surface;					//The output surface. In this case provided by GLFW.
-	QueueInfo m_Queues[3];					//One queue of each type.
+	RenderData m_RenderData;
 
 	VkSwapchainKHR m_SwapChain;				//The swapchain for the GLFW window.
 	std::vector<VkImageView> m_SwapViews;	//The views for the swapchain images.
-
+	
 	VkCommandBuffer m_CopyBuffer;			//The command buffer used to copy resources to the GPU.
 	VkCommandPool m_CopyCommandPool;		//The command pool used for copying data.
-
-	VmaAllocator m_Allocator;				//External library handling memory management to keep this project a bit cleaner.
-
-	std::uint32_t m_NumFrames;				//The amount of frames in the swapchain.
+	
 	std::uint32_t m_CurrentFrameIndex;		//The current frame index.
-	VkSemaphore m_FrameReadySemaphore;	//This semaphore is signaled by the swapchain when it's ready for the next frame. 
-	std::vector<Frame> m_FrameData;			//Resources for each frame.
+	VkSemaphore m_FrameReadySemaphore;		//This semaphore is signaled by the swapchain when it's ready for the next frame. 
 
 	/*
-	 * Stages in the renderer.
+	 * The render stages in this renderer.
 	 */
-	RenderStage_Deferred m_DeferredStage;			//The render stage where the output buffer is cleared.
+	std::vector<std::unique_ptr<RenderStage>> m_RenderStages;
+
+	/*
+	 * References to render stages for individual specific use.
+	 */
+	RenderStage_Deferred* m_DeferredStage;	//The deferred stage.
 	
 	/*
 	 * Dynamic Vulkan objects directly related to rendering.
 	 */
 	std::vector<std::shared_ptr<Mesh>> m_Meshes;	//Vector of all the meshes loaded. If ref count reaches 1, free.
-
-	/*
-	 * Other objects.
-	 */
-	RendererSettings m_Settings;
 };

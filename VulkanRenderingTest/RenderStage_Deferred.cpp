@@ -4,7 +4,7 @@
 #include "Renderer.h"
 #include "RenderUtility.h"
 
-bool RenderStage_Deferred::Init(const RendererSettings& a_Settings, const uint32_t a_SwapBufferCount, VkDevice& a_Device)
+bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
 {
 
     /*
@@ -12,7 +12,7 @@ bool RenderStage_Deferred::Init(const RendererSettings& a_Settings, const uint32
      */
     const std::string workingDir = std::filesystem::current_path().string();
 
-    if (!RenderUtility::CreateShaderModuleFromSpirV(workingDir + "/shaders/output/default.vert.spv", m_VertexShader, a_Device) || !RenderUtility::CreateShaderModuleFromSpirV(workingDir + "/shaders/output/default.frag.spv", m_FragmentShader, a_Device))
+    if (!RenderUtility::CreateShaderModuleFromSpirV(workingDir + "/shaders/output/default.vert.spv", m_VertexShader, a_RenderData.m_Device) || !RenderUtility::CreateShaderModuleFromSpirV(workingDir + "/shaders/output/default.frag.spv", m_FragmentShader, a_RenderData.m_Device))
     {
         printf("Could not load fragment or vertex shader from Spir-V.\n");
         return false;
@@ -54,13 +54,13 @@ bool RenderStage_Deferred::Init(const RendererSettings& a_Settings, const uint32
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = (float)a_Settings.windowWidth;
-    viewport.height = (float)a_Settings.windowHeight;
+    viewport.width = (float)a_RenderData.m_Settings.resolutionX;
+    viewport.height = (float)a_RenderData.m_Settings.resolutionY;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     VkRect2D scissor{};
     scissor.offset = { 0, 0 };
-    scissor.extent = VkExtent2D{ a_Settings.windowWidth, a_Settings.windowHeight };
+    scissor.extent = VkExtent2D{ a_RenderData.m_Settings.resolutionX, a_RenderData.m_Settings.resolutionY };
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewportState.viewportCount = 1;
@@ -128,7 +128,7 @@ bool RenderStage_Deferred::Init(const RendererSettings& a_Settings, const uint32
     pipelineLayoutInfo.pushConstantRangeCount = 0;
     pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
-    if (vkCreatePipelineLayout(a_Device, &pipelineLayoutInfo, nullptr, &m_PipelineLayout) != VK_SUCCESS)
+    if (vkCreatePipelineLayout(a_RenderData.m_Device, &pipelineLayoutInfo, nullptr, &m_PipelineLayout) != VK_SUCCESS)
     {
         printf("Could not create pipeline layout for rendering pipeline!\n");
         return false;
@@ -136,7 +136,7 @@ bool RenderStage_Deferred::Init(const RendererSettings& a_Settings, const uint32
 
     //The render pass.
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = a_Settings.outputFormat;
+    colorAttachment.format = a_RenderData.m_Settings.outputFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -160,7 +160,7 @@ bool RenderStage_Deferred::Init(const RendererSettings& a_Settings, const uint32
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
 
-    if (vkCreateRenderPass(a_Device, &renderPassInfo, nullptr, &m_RenderPass) != VK_SUCCESS)
+    if (vkCreateRenderPass(a_RenderData.m_Device, &renderPassInfo, nullptr, &m_RenderPass) != VK_SUCCESS)
     {
         printf("Could not create render pass for pipeline!\n");
         return false;
@@ -193,7 +193,7 @@ bool RenderStage_Deferred::Init(const RendererSettings& a_Settings, const uint32
     psoInfo.basePipelineHandle = nullptr;
     psoInfo.basePipelineIndex = -1;
 
-    if (vkCreateGraphicsPipelines(a_Device, VK_NULL_HANDLE, 1, &psoInfo, nullptr, &m_Pipeline) != VK_SUCCESS)
+    if (vkCreateGraphicsPipelines(a_RenderData.m_Device, VK_NULL_HANDLE, 1, &psoInfo, nullptr, &m_Pipeline) != VK_SUCCESS)
     {
         printf("Could not create graphics pipeline!\n");
         return false;
@@ -201,16 +201,18 @@ bool RenderStage_Deferred::Init(const RendererSettings& a_Settings, const uint32
     return true;
 }
 
-bool RenderStage_Deferred::RecordCommandBuffer(const RendererSettings& a_Settings, VkCommandBuffer& a_CommandBuffer, const uint32_t currentFrameIndex, Frame& a_FrameData)
+bool RenderStage_Deferred::RecordCommandBuffer(const RenderData& a_RenderData, VkCommandBuffer& a_CommandBuffer,
+    const uint32_t currentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
+    std::vector<VkSemaphore>& a_SignalSemaphores, std::vector<VkPipelineStageFlags>& a_WaitStageFlags)
 {
     //Fill the command buffer
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = m_RenderPass;
-    renderPassInfo.framebuffer = a_FrameData.m_FrameBuffer;
+    renderPassInfo.framebuffer = a_RenderData.m_FrameData[currentFrameIndex].m_FrameBuffer;
     renderPassInfo.renderArea.offset = { 0, 0 };
-    renderPassInfo.renderArea.extent = { a_Settings.windowWidth, a_Settings.windowHeight };
-    VkClearValue clearColor = { a_Settings.clearColor.r, a_Settings.clearColor.g, a_Settings.clearColor.b, a_Settings.clearColor.a };
+    renderPassInfo.renderArea.extent = { a_RenderData.m_Settings.resolutionX, a_RenderData.m_Settings.resolutionY };
+    VkClearValue clearColor = { a_RenderData.m_Settings.clearColor.r, a_RenderData.m_Settings.clearColor.g, a_RenderData.m_Settings.clearColor.b, a_RenderData.m_Settings.clearColor.a };
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearColor;
     vkCmdBeginRenderPass(a_CommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -221,16 +223,22 @@ bool RenderStage_Deferred::RecordCommandBuffer(const RendererSettings& a_Setting
     return true;
 }
 
-bool RenderStage_Deferred::CleanUp(VkDevice& a_Device)
+bool RenderStage_Deferred::Resize(const RenderData& a_RenderData)
+{
+	//TODO resize
+    return true;
+}
+
+bool RenderStage_Deferred::CleanUp(const RenderData& a_RenderData)
 {
     //Pipeline related objects.
-    vkDestroyPipeline(a_Device, m_Pipeline, nullptr);
-    vkDestroyRenderPass(a_Device, m_RenderPass, nullptr);
-    vkDestroyPipelineLayout(a_Device, m_PipelineLayout, nullptr);
+    vkDestroyPipeline(a_RenderData.m_Device, m_Pipeline, nullptr);
+    vkDestroyRenderPass(a_RenderData.m_Device, m_RenderPass, nullptr);
+    vkDestroyPipelineLayout(a_RenderData.m_Device, m_PipelineLayout, nullptr);
 
     //Delete the allocated fragment and vertex shaders.
-    vkDestroyShaderModule(a_Device, m_VertexShader, nullptr);
-    vkDestroyShaderModule(a_Device, m_FragmentShader, nullptr);
+    vkDestroyShaderModule(a_RenderData.m_Device, m_VertexShader, nullptr);
+    vkDestroyShaderModule(a_RenderData.m_Device, m_FragmentShader, nullptr);
 	
     return true;
 }

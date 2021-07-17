@@ -26,6 +26,10 @@ int main()
             run = renderer->Run();
             ++frameId;
             printf("Done rendering frame %i.\n", frameId);
+        	if(frameId > 50)
+        	{
+                run = false;
+        	}
         }
     }
     else
