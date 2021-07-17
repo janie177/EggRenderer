@@ -6,6 +6,7 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm/glm.hpp>
 
+#include "ConcurrentRegistry.h"
 #include "vk_mem_alloc.h"
 #include "RenderStage.h"
 
@@ -289,5 +290,5 @@ private:
 	/*
 	 * Dynamic Vulkan objects directly related to rendering.
 	 */
-	std::vector<std::shared_ptr<Mesh>> m_Meshes;	//Vector of all the meshes loaded. If ref count reaches 1, free.
+	ConcurrentRegistry<Mesh> m_Meshes;		//Vector of all the meshes loaded. If ref count reaches 1, free.
 };

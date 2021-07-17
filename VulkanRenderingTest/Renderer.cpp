@@ -195,13 +195,10 @@ bool Renderer::CleanUp()
         vkWaitForFences(m_RenderData.m_Device, 1, &frame.m_Fence, true, std::numeric_limits<uint32_t>::max());
 	}
 
-    //Free all meshes.
-    for(auto& mesh : m_Meshes)
+    m_Meshes.RemoveAll([&](Mesh& a_Mesh)
     {
-        //Destroy the buffers.
-        vmaDestroyBuffer(m_RenderData.m_Allocator, mesh->GetBuffer(), mesh->GetAllocation());
-    }
-    m_Meshes.clear();
+		vmaDestroyBuffer(m_RenderData.m_Allocator, a_Mesh.GetBuffer(), a_Mesh.GetAllocation());
+    });
 
     //TODO render stage and textures
 
@@ -341,20 +338,10 @@ bool Renderer::Run()
     vkQueuePresentKHR(m_RenderData.m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_Queue, &presentInfo);
 
     //Destroy unused meshes. Ensure that they are not in flight by keeping a reference of them in the renderer when on the GPU.
-    auto itr = m_Meshes.begin();
-    for(auto& mesh : m_Meshes)
-    {
-        if(mesh.use_count() == 1)
+    m_Meshes.RemoveUnused([&](Mesh& a_Mesh)
         {
-            //Destroy the buffers.
-            vmaDestroyBuffer(m_RenderData.m_Allocator, mesh->GetBuffer(), mesh->GetAllocation());
-            itr = m_Meshes.erase(itr);
-        }
-        else
-        {
-            ++itr;
-        }
-    }
+            vmaDestroyBuffer(m_RenderData.m_Allocator, a_Mesh.GetBuffer(), a_Mesh.GetAllocation());
+		});
 
     /*
      * Retrieve the next available frame index.
@@ -491,7 +478,7 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
 
     //Finally create a shared pointer and return a copy of it after putting it in the registry.
     auto ptr = std::make_shared<Mesh>(allocation, buffer, a_IndexBuffer.size(), a_VertexBuffer.size(), indexOffset, vertexOffset);
-    m_Meshes.push_back(ptr);
+    m_Meshes.Add(ptr);
     return ptr;
 }
 
