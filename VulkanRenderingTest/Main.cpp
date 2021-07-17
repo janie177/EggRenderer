@@ -17,10 +17,9 @@ int main()
     {
         std::vector<Vertex> vertices{ Vertex{glm::vec3{0.f, 0.f, 0.f}, glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}}};
         std::vector<uint32_t> indices{1, 2, 3, 4, 5, 6, 22, 1};
-        auto mesh = renderer->CreateMesh(vertices, indices);
-
-        int width = 300;
-        int height = 250;
+        {
+            auto mesh = renderer->CreateMesh(vertices, indices);
+        }
     	
         static int frameId = 0;
         bool run = true;

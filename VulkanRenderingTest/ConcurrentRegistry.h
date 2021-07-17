@@ -25,8 +25,15 @@ public:
 	 *
 	 * The entry offset and num entries provided allow for a subset of the entries to be checked for removal.
 	 * By default, all entries are checked.
+	 *
+	 * Entries are only erased when the provided function returns true.
+	 * Entries are skipped over when the provided function returns false.
 	 */
-	void RemoveUnused(const std::function<void(T& a_Entry)>& a_OnRemoveFunc, size_t a_EntryOffset = 0, size_t a_NumEntries = std::numeric_limits<size_t>::max());
+	void RemoveUnused(
+		const std::function<bool(T& a_Entry)>& a_OnRemoveFunc,
+		size_t a_EntryOffset = 0,
+		size_t a_NumEntries = std::numeric_limits<size_t>::max()
+	);
 
 	/*
 	 * Get the amount of items in this registry.
@@ -59,7 +66,11 @@ void ConcurrentRegistry<T>::Add(const std::shared_ptr<T>& a_Ptr)
 }
 
 template <typename T>
-void ConcurrentRegistry<T>::RemoveUnused(const std::function<void(T& a_Entry)>& a_OnRemoveFunc, size_t a_EntryOffset, size_t a_NumEntries)
+void ConcurrentRegistry<T>::RemoveUnused(
+	const std::function<bool(T& a_Entry)>& a_OnRemoveFunc,
+	size_t a_EntryOffset,
+	size_t a_NumEntries
+)
 {
 	std::lock_guard<std::mutex> lockGuard(m_Mutex);
 
@@ -67,9 +78,9 @@ void ConcurrentRegistry<T>::RemoveUnused(const std::function<void(T& a_Entry)>& 
 	auto itr = m_Vector.begin() + a_EntryOffset;
 	while(itr < m_Vector.end() && counter <= a_NumEntries)
 	{
-		if((*itr).use_count() < 2)
+		//If only one reference, and the function also returns true; remove.
+		if((*itr).use_count() < 2 && a_OnRemoveFunc(*(*itr)))
 		{
-			a_OnRemoveFunc(*(*itr));
 			itr = m_Vector.erase(itr);
 		}
 		else

@@ -29,6 +29,7 @@ bool Renderer::Init(const RendererSettings& a_Settings)
     assert(a_Settings.m_SwapBufferCount < 100);
 	
     m_RenderData.m_Settings = a_Settings;
+    m_FrameCounter = 0;
 
 	/*
 	 * Init GLFW and ensure that it supports Vulkan.
@@ -195,6 +196,7 @@ bool Renderer::CleanUp()
         vkWaitForFences(m_RenderData.m_Device, 1, &frame.m_Fence, true, std::numeric_limits<uint32_t>::max());
 	}
 
+	//Unload all meshes.
     m_Meshes.RemoveAll([&](Mesh& a_Mesh)
     {
 		vmaDestroyBuffer(m_RenderData.m_Allocator, a_Mesh.GetBuffer(), a_Mesh.GetAllocation());
@@ -231,7 +233,7 @@ bool Renderer::CleanUp()
     vkDestroyInstance(m_RenderData.m_VulkanInstance, nullptr);
 
     glfwDestroyWindow(m_Window);
-
+	
     return true;
 }
 
@@ -243,7 +245,8 @@ Renderer::Renderer() :
 	m_CopyCommandPool(nullptr),
 	m_CurrentFrameIndex(0),
 	m_FrameReadySemaphore(nullptr),
-	m_DeferredStage(nullptr)
+	m_DeferredStage(nullptr),
+	m_FrameCounter(0)
 {
 }
 
@@ -283,6 +286,11 @@ bool Renderer::Run()
     std::vector<VkSemaphore> signalSemaphores;
     std::vector<VkPipelineStageFlags> waitStageFlags;       //The stages the wait semaphores should wait in.
 
+    /*
+     * Setup data for each stage depending on what has been provided this frame.
+     */
+	//TODO pass transforms, meshes 
+	
     /*
      * Execute all the render stages.
      */
@@ -337,11 +345,23 @@ bool Renderer::Run()
     presentInfo.pResults = nullptr;
     vkQueuePresentKHR(m_RenderData.m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_Queue, &presentInfo);
 
-    //Destroy unused meshes. Ensure that they are not in flight by keeping a reference of them in the renderer when on the GPU.
-    m_Meshes.RemoveUnused([&](Mesh& a_Mesh)
-        {
-            vmaDestroyBuffer(m_RenderData.m_Allocator, a_Mesh.GetBuffer(), a_Mesh.GetAllocation());
-		});
+    //Every time a full swap chain has been consumed, remove unused resources.
+	if(m_FrameCounter % m_RenderData.m_Settings.m_SwapBufferCount == 0)
+	{
+        m_Meshes.RemoveUnused(
+            [&](Mesh& a_Mesh) -> bool
+	        {
+            	//If the resource has not been used in the last full swap-chain cylce, it's not in flight.
+            	if(m_CurrentFrameIndex - a_Mesh.m_LastUsedFrameId > m_RenderData.m_Settings.m_SwapBufferCount)
+            	{
+                    vmaDestroyBuffer(m_RenderData.m_Allocator, a_Mesh.GetBuffer(), a_Mesh.GetAllocation());
+                    return true;
+            	}
+                return false;
+	        }
+        );
+	}
+
 
     /*
      * Retrieve the next available frame index.
@@ -350,6 +370,10 @@ bool Renderer::Run()
      */
     vkAcquireNextImageKHR(m_RenderData.m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), frameData.m_WaitForFrameSemaphore, nullptr, &m_CurrentFrameIndex);
     m_FrameReadySemaphore = frameData.m_WaitForFrameSemaphore;
+
+	//Increment the frame index.
+    ++m_FrameCounter;
+	
 	return true;
 }
 
