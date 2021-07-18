@@ -6,6 +6,18 @@
 struct RenderData;
 
 /*
+ * 128 byte struct to send data to the shader quickly.
+ */
+struct DeferredPushConstants
+{
+	glm::mat4 m_VPMatrix;	//Camera view projection matrix.
+	glm::vec4 m_Data1;		//Anything can be stored in these.
+	glm::vec4 m_Data2;
+	glm::vec4 m_Data3;
+	glm::vec4 m_Data4;
+};
+
+/*
  * The basic render stage class that is derived from.
  */
 class RenderStage
@@ -53,7 +65,7 @@ private:
 	bool m_Enabled;
 };
 
-class RenderStage_Deferred : public RenderStage
+class RenderStage_HelloTriangle : public RenderStage
 {
 public:
 	/*
@@ -68,9 +80,44 @@ public:
 		const uint32_t currentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
 		std::vector<VkSemaphore>& a_SignalSemaphores, std::vector<VkPipelineStageFlags>& a_WaitStageFlags) override;
 private:
-	VkPipeline m_Pipeline;					//The pipeline containing all state used for rendering.
-	VkShaderModule m_VertexShader;			//The vertex shader for the graphics pipeline.
-	VkShaderModule m_FragmentShader;		//The fragment shader for the graphics pipeline.
-	VkPipelineLayout m_PipelineLayout;		//The layout of the deferred graphics pipeline.
-	VkRenderPass m_RenderPass;				//The render pass used for deferred rendering.
+	VkPipeline m_Pipeline;
+	VkShaderModule m_VertexShader;
+	VkShaderModule m_FragmentShader;
+	VkPipelineLayout m_PipelineLayout;
+	VkRenderPass m_RenderPass;
+};
+
+class RenderStage_Deferred : public RenderStage
+{
+public:
+	/*
+	 * Get a reference to the render pass (layout is required for constructing frame buffers).
+	 */
+	VkRenderPass& GetRenderPass();
+
+	bool Init(const RenderData& a_RenderData) override;
+
+	bool CleanUp(const RenderData& a_RenderData) override;
+
+	bool RecordCommandBuffer(const RenderData& a_RenderData, VkCommandBuffer& a_CommandBuffer,
+		const uint32_t currentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
+		std::vector<VkSemaphore>& a_SignalSemaphores, std::vector<VkPipelineStageFlags>& a_WaitStageFlags) override;
+private:
+	/*
+	 * Pipeline objects for the deferred rendering stage.
+	 */
+	VkPipelineLayout m_DeferredPipelineLayout;
+	VkPipeline m_DeferredPipeline;
+	VkShaderModule m_DeferredVertexShader;
+	VkShaderModule m_DeferredFragmentShader;
+	VkRenderPass m_DeferredRenderPass;
+
+	/*
+	 * Pipeline objects for the shading stage.
+	 */
+	VkPipelineLayout m_ShadingPipelineLayout;
+	VkPipeline m_ShadingPipeline;
+	VkShaderModule m_ShadingVertexShader;
+	VkShaderModule m_ShadingFragmentShader;
+	VkRenderPass m_ShadingRenderPass;
 };

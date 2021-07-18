@@ -20,12 +20,15 @@ int main()
         {
             auto mesh = renderer->CreateMesh(vertices, indices);
         }
+
+    	//Drawing information.
+        DrawData drawData;
     	
         static int frameId = 0;
         bool run = true;
         while(run)
         {
-            run = renderer->Run();
+            run = renderer->DrawFrame(drawData);
             ++frameId;
             printf("Done rendering frame %i.\n", frameId);
 

@@ -24,6 +24,9 @@
     <ClCompile Include="vk_mem_alloc.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="RenderStage_HelloTriangle.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="RenderStage_Deferred.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

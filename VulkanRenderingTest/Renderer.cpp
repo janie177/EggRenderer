@@ -30,6 +30,7 @@ bool Renderer::Init(const RendererSettings& a_Settings)
 	
     m_RenderData.m_Settings = a_Settings;
     m_FrameCounter = 0;
+    m_MeshCounter = 0;
 
 	/*
 	 * Init GLFW and ensure that it supports Vulkan.
@@ -47,10 +48,9 @@ bool Renderer::Init(const RendererSettings& a_Settings)
 	}
 
     //Window creation
-    
     // With GLFW_CLIENT_API set to GLFW_NO_API there will be no OpenGL (ES) context.
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     m_Window = glfwCreateWindow(a_Settings.resolutionX, a_Settings.resolutionY, "Vulkan Render Test", nullptr, nullptr);
 
 
@@ -239,18 +239,20 @@ bool Renderer::CleanUp()
 
 Renderer::Renderer() :
 	m_Initialized(false),
+	m_FrameCounter(0),
+	m_MeshCounter(0),
 	m_Window(nullptr),
 	m_SwapChain(nullptr),
 	m_CopyBuffer(nullptr),
 	m_CopyCommandPool(nullptr),
 	m_CurrentFrameIndex(0),
 	m_FrameReadySemaphore(nullptr),
-	m_DeferredStage(nullptr),
-	m_FrameCounter(0)
+	m_HelloTriangleStage(nullptr),
+	m_DeferredStage(nullptr)
 {
 }
 
-bool Renderer::Run()
+bool Renderer::DrawFrame(const DrawData& a_DrawData)
 {
     //Ensure that the renderer has been properly set-up.
     if(!m_Initialized)
@@ -296,8 +298,11 @@ bool Renderer::Run()
      */
 	for(auto& stage : m_RenderStages)
 	{
-		//These functions may add waiting dependencies to the semaphore vectors.
-        stage->RecordCommandBuffer(m_RenderData, cmdBuffer, m_CurrentFrameIndex, waitSemaphores, signalSemaphores, waitStageFlags);
+		if(stage->IsEnabled())
+		{
+            //These functions may add waiting dependencies to the semaphore vectors.
+            stage->RecordCommandBuffer(m_RenderData, cmdBuffer, m_CurrentFrameIndex, waitSemaphores, signalSemaphores, waitStageFlags);
+		}
 	}
 
 	/*
@@ -501,9 +506,11 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
     vkDestroyFence(m_RenderData.m_Device, uploadFence, nullptr);
 
     //Finally create a shared pointer and return a copy of it after putting it in the registry.
-    auto ptr = std::make_shared<Mesh>(allocation, buffer, a_IndexBuffer.size(), a_VertexBuffer.size(), indexOffset, vertexOffset);
+    auto ptr = std::make_shared<Mesh>(m_MeshCounter, allocation, buffer, a_IndexBuffer.size(), a_VertexBuffer.size(), indexOffset, vertexOffset);
     m_Meshes.Add(ptr);
-    return ptr;
+
+    ++m_MeshCounter;
+	return ptr;
 }
 
 bool Renderer::InitVulkan()
@@ -1052,7 +1059,8 @@ bool Renderer::InitPipeline()
     /*
      * Add all the stages to the stage buffer.
      */
-    m_DeferredStage = AddRenderStage<RenderStage_Deferred>(std::make_unique<RenderStage_Deferred>());
+    m_HelloTriangleStage = AddRenderStage(std::make_unique<RenderStage_HelloTriangle>());
+    m_DeferredStage = AddRenderStage(std::make_unique<RenderStage_Deferred>());
 	
     /*
      * Init the render stages for each frame.

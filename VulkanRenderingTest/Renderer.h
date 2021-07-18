@@ -109,6 +109,7 @@ struct RenderData
 	std::vector<Frame> m_FrameData;			//Resources for each frame.
 	
 	RendererSettings m_Settings;			//All settings for the renderer.
+
 };
 
 /*
@@ -135,9 +136,9 @@ public:
 	bool CleanUp();
 
 	/*
-	 * Run for your life!
+	 * Draw the next frame.
 	 */
-	bool Run();
+	bool DrawFrame(const DrawData& a_DrawData);
 
 	/*
 	 * Create a mesh resource.
@@ -147,7 +148,7 @@ public:
 
 private:
 	template<typename T>
-	inline T* AddRenderStage(std::unique_ptr<RenderStage>&& a_Stage)
+	inline T* AddRenderStage(std::unique_ptr<T>&& a_Stage)
 	{
 		//Ensure the right type is provided.
 		//This only runs at program startup so dynamic cast is fine here.
@@ -216,7 +217,8 @@ private:
 	bool m_Initialized;
 
 	uint32_t m_FrameCounter;					//The index of the current frame. Used to track resource usage.
-
+	uint32_t m_MeshCounter;						//The mesh ID incrementing counter.
+	
 	/*
      * GLFW Objects.
      */
@@ -244,7 +246,8 @@ private:
 	/*
 	 * References to render stages for individual specific use.
 	 */
-	RenderStage_Deferred* m_DeferredStage;	//The deferred stage.
+	RenderStage_HelloTriangle* m_HelloTriangleStage;	//The hello world triangle for testing.
+	RenderStage_Deferred* m_DeferredStage;				//The deferred render pass.
 	
 	/*
 	 * Dynamic Vulkan objects directly related to rendering.
