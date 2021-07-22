@@ -55,7 +55,7 @@ int main()
     //Delete all allocated objects.
     if(renderer->CleanUp())
     {
-        printf("Renderer succesfully cleaned up!\n");
+        printf("Renderer successfully cleaned up!\n");
     }
     else
     {

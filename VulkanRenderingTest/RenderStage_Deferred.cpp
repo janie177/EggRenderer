@@ -8,217 +8,232 @@
 
 VkRenderPass& RenderStage_Deferred::GetRenderPass()
 {
+
+    return m_DeferredRenderPass;
 }
 
 bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
 {
-    /*
-	 * Load the Spir-V shaders from disk.
-	 */
-    const std::string workingDir = std::filesystem::current_path().string();
-    if (
-		!RenderUtility::CreateShaderModuleFromSpirV(workingDir + "/shaders/output/deferred.vert.spv", m_DeferredVertexShader, a_RenderData.m_Device) || 
-		!RenderUtility::CreateShaderModuleFromSpirV(workingDir + "/shaders/output/deferred.frag.spv", m_DeferredFragmentShader, a_RenderData.m_Device) ||
-		!RenderUtility::CreateShaderModuleFromSpirV(workingDir + "/shaders/output/deferredShading.vert.spv", m_ShadingVertexShader, a_RenderData.m_Device) ||
-		!RenderUtility::CreateShaderModuleFromSpirV(workingDir + "/shaders/output/deferredShading.frag.spv", m_ShadingFragmentShader, a_RenderData.m_Device)
-		)
+    m_Frames.resize(a_RenderData.m_Settings.m_SwapBufferCount);
+
+    //How each attachment will be used.
+    constexpr VkImageUsageFlags imageUsage[DEFERRED_NUM_ATTACHMENTS]
     {
-        printf("Could not load fragment or vertex shader from Spir-V for deferred pass!\n");
-        return false;
+        VkImageUsageFlagBits::VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VkImageUsageFlagBits::VK_IMAGE_USAGE_SAMPLED_BIT,
+        VkImageUsageFlagBits::VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VkImageUsageFlagBits::VK_IMAGE_USAGE_SAMPLED_BIT,
+        VkImageUsageFlagBits::VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VkImageUsageFlagBits::VK_IMAGE_USAGE_SAMPLED_BIT,
+        VkImageUsageFlagBits::VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VkImageUsageFlagBits::VK_IMAGE_USAGE_SAMPLED_BIT,
+        VkImageUsageFlagBits::VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VkImageUsageFlagBits::VK_IMAGE_USAGE_SAMPLED_BIT,
+        VkImageUsageFlagBits::VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VkImageUsageFlagBits::VK_IMAGE_USAGE_SAMPLED_BIT,
+        VkImageUsageFlagBits::VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VkImageUsageFlagBits::VK_IMAGE_USAGE_SAMPLED_BIT,
+    };
+
+    constexpr VkImageType imageType[DEFERRED_NUM_ATTACHMENTS]
+    {
+        VkImageType::VK_IMAGE_TYPE_2D,
+        VkImageType::VK_IMAGE_TYPE_2D,
+        VkImageType::VK_IMAGE_TYPE_2D,
+        VkImageType::VK_IMAGE_TYPE_2D,
+        VkImageType::VK_IMAGE_TYPE_2D,
+        VkImageType::VK_IMAGE_TYPE_2D,
+        VkImageType::VK_IMAGE_TYPE_2D,
+    };
+
+    constexpr VkFormat imageFormat[DEFERRED_NUM_ATTACHMENTS]
+    {
+        VkFormat::VK_FORMAT_D32_SFLOAT,             //Depth
+        VkFormat::VK_FORMAT_R32G32B32_SFLOAT,       //Position
+        VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT,    //Normal/Material ID
+        VkFormat::VK_FORMAT_R32G32B32_SFLOAT,       //Tangent
+        VkFormat::VK_FORMAT_R32G32_SFLOAT,          //UV
+        VkFormat::VK_FORMAT_D32_SFLOAT,             //Depth
+        VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT,    //Color
+    };
+
+    /*
+     * Set up the buffers and objects per frame.
+     */
+    for (auto& frame : m_Frames)
+    {
+        /*
+         * Initialize the output images.
+         * Loop over the attachments, and then create the VkImage and VkImageView objects accordingly.
+         */
+        for (int attachmentIndex = 0; attachmentIndex < DEFERRED_NUM_ATTACHMENTS; ++attachmentIndex)
+        {
+            VkImageCreateInfo imgInfo{};
+            imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+            imgInfo.arrayLayers = 1;
+            imgInfo.format = imageFormat[attachmentIndex];
+            imgInfo.extent = VkExtent3D{a_RenderData.m_Settings.resolutionX, a_RenderData.m_Settings.resolutionY, 1};
+            imgInfo.imageType = imageType[attachmentIndex];
+            imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            imgInfo.mipLevels = 1;
+            imgInfo.samples = VkSampleCountFlagBits::VK_SAMPLE_COUNT_1_BIT;
+            imgInfo.usage = imageUsage[attachmentIndex];
+            imgInfo.sharingMode = VkSharingMode::VK_SHARING_MODE_EXCLUSIVE;
+
+            VmaAllocationCreateInfo allocationCreateInfo{};
+            allocationCreateInfo.usage = VmaMemoryUsage::VMA_MEMORY_USAGE_GPU_ONLY;
+            allocationCreateInfo.requiredFlags = VkMemoryPropertyFlagBits::VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+            VkImageViewCreateInfo viewInfo{};
+            viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            viewInfo.pNext = nullptr;
+            viewInfo.flags = 0;
+            viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            viewInfo.format = imageFormat[attachmentIndex];
+            viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+            viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+            viewInfo.subresourceRange.aspectMask = (imageFormat[attachmentIndex] == VK_FORMAT_D32_SFLOAT ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT);
+            viewInfo.subresourceRange.baseMipLevel = 0;
+            viewInfo.subresourceRange.levelCount = 1;
+            viewInfo.subresourceRange.baseArrayLayer = 0;
+            viewInfo.subresourceRange.layerCount = 1;
+
+            if (vmaCreateImage(a_RenderData.m_Allocator, &imgInfo, &allocationCreateInfo, &frame.m_Images[attachmentIndex], &frame.m_ImageAllocations[attachmentIndex], nullptr) != VK_SUCCESS)
+            {
+                printf("Could not create image in deferred stage.\n");
+                return false;
+            }
+
+            //Set the image.
+            viewInfo.image = frame.m_Images[attachmentIndex];
+
+            if (vkCreateImageView(a_RenderData.m_Device, &viewInfo, nullptr, &frame.m_ImageViews[attachmentIndex]) != VK_SUCCESS)
+            {
+                printf("Could not create image view in deferred stage.\n");
+                return false;
+            }
+        }
+
+        /*
+         * Descriptors used to read the deferred output in the image.
+         */
+        constexpr auto numDeferredReadDescriptors = DEFERRED_NUM_ATTACHMENTS - 2;   //Only the inputs need to be read in this shader stage.
+
+        VkDescriptorSetLayoutBinding descriptorSetLayoutBinding{};
+        descriptorSetLayoutBinding.descriptorCount = numDeferredReadDescriptors;
+        descriptorSetLayoutBinding.binding = 0;
+        descriptorSetLayoutBinding.descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        descriptorSetLayoutBinding.stageFlags = VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT;    //Only used in the fragment shader.
+        descriptorSetLayoutBinding.pImmutableSamplers = nullptr;
+
+        VkDescriptorSetLayoutCreateInfo setLayoutInfo{};
+        setLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        setLayoutInfo.bindingCount = 1;
+        setLayoutInfo.pBindings = &descriptorSetLayoutBinding;
+
+        VkDescriptorPoolSize poolSizes{};
+        poolSizes.type = VkDescriptorType::VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        poolSizes.descriptorCount = DEFERRED_NUM_ATTACHMENTS;
+        VkDescriptorPoolCreateInfo descPoolInfo{};
+        descPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        descPoolInfo.maxSets = 1;
+        descPoolInfo.poolSizeCount = 1;
+        descPoolInfo.pPoolSizes = &poolSizes;
+
+        //Make the descriptor set layout.
+        if (vkCreateDescriptorSetLayout(a_RenderData.m_Device, &setLayoutInfo, nullptr, &frame.m_DescriptorSetLayout) != VK_SUCCESS)
+        {
+            printf("Could not create descriptor set layout for deferred render stage.\n");
+            return false;
+        }
+
+        //Make the descriptor pool. Pool uses the layout created above.
+        if (vkCreateDescriptorPool(a_RenderData.m_Device, &descPoolInfo, nullptr, &frame.m_DescriptorPool) != VK_SUCCESS)
+        {
+            printf("Could not create descriptor pool for deferred render stage.\n");
+            return false;
+        }
+
+        //Make the actual descriptor set. It's created inside the pool above using the layout above.
+        VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
+        descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        descriptorSetAllocateInfo.pSetLayouts = &frame.m_DescriptorSetLayout;
+        descriptorSetAllocateInfo.descriptorSetCount = 1;
+        descriptorSetAllocateInfo.descriptorPool = frame.m_DescriptorPool;
+        if (vkAllocateDescriptorSets(a_RenderData.m_Device, &descriptorSetAllocateInfo, &frame.m_DescriptorSet) != VK_SUCCESS)
+        {
+            printf("Could not create descriptor set for deferred render stage.\n");
+            return false;
+        }
     }
 
 	/*
-	 * Deferred stage below.
+	 * Deferred pipeline definition.
 	 */
     {
-        //Add the shaders to the pipeline
-        VkPipelineShaderStageCreateInfo vertexStage{};
-        vertexStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        vertexStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
-        vertexStage.module = m_DeferredVertexShader;
-        vertexStage.pName = "main";
-        VkPipelineShaderStageCreateInfo fragmentStage{};
-        fragmentStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        fragmentStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-        fragmentStage.module = m_DeferredFragmentShader;
-        fragmentStage.pName = "main";
-        VkPipelineShaderStageCreateInfo shaderStages[] = { vertexStage, fragmentStage };
-
-    	//Configure the vertex attributes.
-        constexpr auto numVertexAttribs = 4;
-        VkVertexInputAttributeDescription attribs[numVertexAttribs];
-        VkVertexInputBindingDescription binding{};
-        binding = {0, sizeof(Vertex), VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX};
-		attribs[0] = { 0, 0, VkFormat::VK_FORMAT_R32G32B32_SFLOAT, 0 }; //Position
-        attribs[1] = { 1, 0, VkFormat::VK_FORMAT_R32G32B32_SFLOAT, 0 }; //Normal
-        attribs[2] = { 2, 0, VkFormat::VK_FORMAT_R32G32B32_SFLOAT, 0 }; //Tangent
-        attribs[3] = { 3, 0, VkFormat::VK_FORMAT_R32G32_SFLOAT, 0 };    //Uv Coords
-    	
-        //Vertex input
-        VkPipelineVertexInputStateCreateInfo vertexInfo{};
-        vertexInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInfo.vertexBindingDescriptionCount = 1;
-        vertexInfo.vertexAttributeDescriptionCount = numVertexAttribs;
-        vertexInfo.pVertexBindingDescriptions = &binding;
-        vertexInfo.pVertexAttributeDescriptions = attribs;
-
-        //Input assembly state
-        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-        inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        inputAssembly.primitiveRestartEnable = false;
-
-        //Viewport
-        VkViewport viewport{};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = (float)a_RenderData.m_Settings.resolutionX;
-        viewport.height = (float)a_RenderData.m_Settings.resolutionY;
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        VkRect2D scissor{};
-        scissor.offset = { 0, 0 };
-        scissor.extent = VkExtent2D{ a_RenderData.m_Settings.resolutionX, a_RenderData.m_Settings.resolutionY };
-        VkPipelineViewportStateCreateInfo viewportState{};
-        viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-        viewportState.viewportCount = 1;
-        viewportState.pViewports = &viewport;
-        viewportState.scissorCount = 1;
-        viewportState.pScissors = &scissor;
-
-        //Rasterizer state
-        VkPipelineRasterizationStateCreateInfo rasterizationState{};
-        rasterizationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-        rasterizationState.depthClampEnable = VK_FALSE;         //Clamp instead of discard would be nice for shadow mapping
-        rasterizationState.rasterizerDiscardEnable = VK_FALSE;  //Disables all input, not sure when this would be useful, maybe when switching menus and not rendering the main scene?
-        rasterizationState.polygonMode = VK_POLYGON_MODE_FILL;  //Can draw as lines which is really awesome for debugging and making people think I'm hackerman
-        rasterizationState.lineWidth = 1.0f;                    //Line width in case of hackerman mode
-        rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;    //Same as GL
-        rasterizationState.frontFace = VK_FRONT_FACE_CLOCKWISE; //Same as GL
-        rasterizationState.depthBiasEnable = VK_FALSE;          //Useful for shadow mapping to prevent acne.
-        rasterizationState.depthBiasConstantFactor = 0.0f;      //^    
-        rasterizationState.depthBiasClamp = 0.0f;               //^
-        rasterizationState.depthBiasSlopeFactor = 0.0f;         //^
-
-        //Multi-sampling which nobody really uses anymore anyways. TAA all the way!
-        VkPipelineMultisampleStateCreateInfo multiSampleState{};
-        multiSampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-        multiSampleState.sampleShadingEnable = VK_FALSE;
-        multiSampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-        multiSampleState.minSampleShading = 1.0f;
-        multiSampleState.pSampleMask = nullptr;
-        multiSampleState.alphaToCoverageEnable = VK_FALSE;
-        multiSampleState.alphaToOneEnable = VK_FALSE;
-
-        //The depth state. Stencil is not used for now.
-        VkPipelineDepthStencilStateCreateInfo depthStencilState{};
-        depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-        depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS;
-        depthStencilState.depthTestEnable = true;
-        depthStencilState.depthWriteEnable = true;
-        depthStencilState.stencilTestEnable = false;
-        depthStencilState.depthBoundsTestEnable = false;
-
-        //Color blending.
-        VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        colorBlendAttachment.blendEnable = VK_FALSE;
-        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-
-        VkPipelineColorBlendStateCreateInfo colorBlendState{};
-        colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        colorBlendState.logicOpEnable = VK_FALSE;
-        colorBlendState.logicOp = VK_LOGIC_OP_COPY;
-        colorBlendState.attachmentCount = 1;
-        colorBlendState.pAttachments = &colorBlendAttachment;
-        colorBlendState.blendConstants[0] = 0.0f;
-
-        VkPushConstantRange pushConstant{};
-        pushConstant.size = sizeof(DeferredPushConstants);
-        pushConstant.offset = 0;
-        pushConstant.stageFlags = VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT;
-    	
-        //The pipeline layout.  //TODO actual descriptor set layout
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 0;
-        pipelineLayoutInfo.pSetLayouts = nullptr;
-        pipelineLayoutInfo.pushConstantRangeCount = 1;
-        pipelineLayoutInfo.pPushConstantRanges = &pushConstant;
-
-        if (vkCreatePipelineLayout(a_RenderData.m_Device, &pipelineLayoutInfo, nullptr, &m_DeferredPipelineLayout) != VK_SUCCESS)
-        {
-            printf("Could not create pipeline layout for rendering pipeline!\n");
-            return false;
-        }
-
-        //The render pass.
-        VkAttachmentDescription colorAttachment{};
-        colorAttachment.format = a_RenderData.m_Settings.outputFormat;
-        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-        VkAttachmentReference colorAttachmentRef{};
-        colorAttachmentRef.attachment = 0;  //Attachment 0 means that writing to layout location 0 in the fragment shader will affect this attachment.
-        colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        VkSubpassDescription subpass{};
-        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpass.colorAttachmentCount = 1;
-        subpass.pColorAttachments = &colorAttachmentRef;
-
-        VkRenderPassCreateInfo renderPassInfo{};
-        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderPassInfo.attachmentCount = 1;
-        renderPassInfo.pAttachments = &colorAttachment;
-        renderPassInfo.subpassCount = 1;
-        renderPassInfo.pSubpasses = &subpass;
-
-        if (vkCreateRenderPass(a_RenderData.m_Device, &renderPassInfo, nullptr, &m_RenderPass) != VK_SUCCESS)
-        {
-            printf("Could not create render pass for pipeline!\n");
-            return false;
-        }
-
-
         /*
-         * Add all these together in the final pipeline state info struct.
+         * Create a render pass that accepts the output attachments.
          */
-        VkGraphicsPipelineCreateInfo psoInfo{}; //Initializer list default inits pointers and numeric variables to 0! Vk structs don't have a default constructor.
-        psoInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        psoInfo.pNext = nullptr;
-        psoInfo.flags = 0;
+         VkAttachmentDescription attachments[5]
+         {
+             {},{},{},{},{}
+         };
 
-        //Add the data to the pipeline.
-        psoInfo.stageCount = 2;
-        psoInfo.pStages = &shaderStages[0];
-        psoInfo.pVertexInputState = &vertexInfo;
-        psoInfo.pInputAssemblyState = &inputAssembly;
-        psoInfo.pViewportState = &viewportState;
-        psoInfo.pRasterizationState = &rasterizationState;
-        psoInfo.pMultisampleState = &multiSampleState;
-        psoInfo.pDepthStencilState = &depthStencilState;
-        psoInfo.pColorBlendState = &colorBlendState;
-        psoInfo.layout = m_PipelineLayout;
-        psoInfo.renderPass = m_RenderPass;
-        psoInfo.subpass = 0;
+         constexpr VkImageLayout layouts[5]
+         {
+             VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+         };
 
-        psoInfo.pDynamicState = nullptr;
-        psoInfo.basePipelineHandle = nullptr;
-        psoInfo.basePipelineIndex = -1;
+         //The render pass.
+         for (int i = 0; i < 5; ++i)
+         {
+             attachments[i].format = imageFormat[i];
+             attachments[i].samples = VK_SAMPLE_COUNT_1_BIT;
+             attachments[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+             attachments[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+             attachments[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+             attachments[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+             attachments[i].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+             attachments[i].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+         }
 
-        if (vkCreateGraphicsPipelines(a_RenderData.m_Device, VK_NULL_HANDLE, 1, &psoInfo, nullptr, &m_Pipeline) != VK_SUCCESS)
+
+         VkAttachmentReference colorAttachmentRef{};
+         colorAttachmentRef.attachment = 0;  //Attachment 0 means that writing to layout location 0 in the fragment shader will affect this attachment.
+         colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+         VkSubpassDescription subpass{};
+         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+         subpass.colorAttachmentCount = 1;
+         subpass.pColorAttachments = &colorAttachmentRef;
+
+         VkRenderPassCreateInfo renderPassInfo{};
+         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+         renderPassInfo.attachmentCount = 1;
+         renderPassInfo.pAttachments = &attachments[0];
+         renderPassInfo.subpassCount = 1;
+         renderPassInfo.pSubpasses = &subpass;
+
+         if (vkCreateRenderPass(a_RenderData.m_Device, &renderPassInfo, nullptr, &m_DeferredRenderPass) != VK_SUCCESS)
+         {
+             printf("Could not create render pass for pipeline!\n");
+             return false;
+         }
+
+        PipelineCreateInfo deferredInfo;
+        deferredInfo.m_Shaders.push_back({ "deferred.vert.spv", "main", VK_SHADER_STAGE_VERTEX_BIT });
+        deferredInfo.m_Shaders.push_back({"deferred.frag.spv", "main", VK_SHADER_STAGE_FRAGMENT_BIT });
+        deferredInfo.resolution.m_ResolutionX = a_RenderData.m_Settings.resolutionX;
+        deferredInfo.resolution.m_ResolutionY = a_RenderData.m_Settings.resolutionY;
+        deferredInfo.vertexData.m_VertexBindings.push_back({ 0, sizeof(Vertex), VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX });
+        deferredInfo.vertexData.m_VertexAttributes.push_back({ 0, 0, VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT, 0});
+        deferredInfo.vertexData.m_VertexAttributes.push_back({ 1, 0, VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT, 12 });
+        deferredInfo.vertexData.m_VertexAttributes.push_back({ 2, 0, VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT, 24 });
+        deferredInfo.vertexData.m_VertexAttributes.push_back({ 3, 0, VkFormat::VK_FORMAT_R32G32_SFLOAT, 36 });
+
+        deferredInfo.pushConstants.m_PushConstantRanges.push_back({VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(DeferredPushConstants)});
+        deferredInfo.renderPass.m_RenderPass = m_DeferredRenderPass;
+
+        if(!RenderUtility::CreatePipeline(deferredInfo, a_RenderData.m_Device, a_RenderData.m_Settings.shadersPath, m_DeferredPipelineData))
         {
-            printf("Could not create graphics pipeline!\n");
             return false;
         }
     }
@@ -228,11 +243,14 @@ bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
 
 bool RenderStage_Deferred::CleanUp(const RenderData& a_RenderData)
 {
+    //TODO
+
+    return true;
 }
 
 bool RenderStage_Deferred::RecordCommandBuffer(const RenderData& a_RenderData, VkCommandBuffer& a_CommandBuffer,
 	const uint32_t currentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
 	std::vector<VkSemaphore>& a_SignalSemaphores, std::vector<VkPipelineStageFlags>& a_WaitStageFlags)
 {
-	
+    return true;
 }

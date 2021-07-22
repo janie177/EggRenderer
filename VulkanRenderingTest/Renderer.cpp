@@ -912,7 +912,7 @@ bool Renderer::CreateSwapChain()
     swapChainInfo.clipped = VK_TRUE;
     swapChainInfo.oldSwapchain = VK_NULL_HANDLE;
 
-    //Creat the swap chain.
+    //Create the swap chain.
     if (vkCreateSwapchainKHR(m_RenderData.m_Device, &swapChainInfo, NULL, &m_SwapChain) != VK_SUCCESS)
     {
         printf("Could not create SwapChain for Vulkan.\n");
@@ -925,9 +925,6 @@ bool Renderer::CreateSwapChain()
     vkGetSwapchainImagesKHR(m_RenderData.m_Device, m_SwapChain, &bufferCount, NULL);
     swapBuffers.resize(bufferCount);
     vkGetSwapchainImagesKHR(m_RenderData.m_Device, m_SwapChain, &bufferCount, swapBuffers.data());
-
-    //Create the views for the swap chain.
-    m_SwapViews.resize(swapBuffers.size());
     
     VkImageViewCreateInfo createInfo;
     {
@@ -947,12 +944,15 @@ bool Renderer::CreateSwapChain()
         createInfo.subresourceRange.layerCount = 1;
     }
 
+    //Resize the render data vector to contain an entry for each frame.
+    m_RenderData.m_FrameData.resize(m_RenderData.m_Settings.m_SwapBufferCount);
+
     //Loop over each swapchain buffer, and create an image view for it.
     for (size_t i = 0; i < swapBuffers.size(); i++) 
     {
         createInfo.image = swapBuffers[i];
 
-        if (vkCreateImageView(m_RenderData.m_Device, &createInfo, nullptr, &m_SwapViews[i]) != VK_SUCCESS)
+        if (vkCreateImageView(m_RenderData.m_Device, &createInfo, nullptr, &m_RenderData.m_FrameData[i].m_SwapchainView) != VK_SUCCESS)
         {
             printf("Could not create image view for swap chain!\n");
             return false;
@@ -969,22 +969,7 @@ bool Renderer::CreateSwapChainFrameData()
 	for(int frameIndex = 0; frameIndex < m_RenderData.m_Settings.m_SwapBufferCount; ++frameIndex)
 	{
         auto& frameData = m_RenderData.m_FrameData[frameIndex];
-        VkImageView attachments[] = { m_SwapViews[frameIndex] };    //image view corresponding with the swapchain index for this frame.
-
-        VkFramebufferCreateInfo fboInfo{};
-        fboInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        fboInfo.renderPass = m_DeferredStage->GetRenderPass();   //TODO: replace this with the actual last output stage before the frame ends.
-        fboInfo.attachmentCount = 1;
-        fboInfo.pAttachments = attachments;
-        fboInfo.width = m_RenderData.m_Settings.resolutionX;
-        fboInfo.height = m_RenderData.m_Settings.resolutionY;
-        fboInfo.layers = 1;
-
-        if (vkCreateFramebuffer(m_RenderData.m_Device, &fboInfo, nullptr, &frameData.m_FrameBuffer) != VK_SUCCESS)
-        {
-            printf("Could not create FBO for frame index %i!\n", frameIndex);
-            return false;
-        }
+        VkImageView attachments[] = { m_RenderData.m_FrameData[frameIndex].m_SwapchainView };    //image view corresponding with the swapchain index for this frame.
 
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -1013,15 +998,10 @@ bool Renderer::CleanUpSwapChain()
     //Destroy frame buffers and such. Also synchronization objects.
     for (auto& frame : m_RenderData.m_FrameData)
     {
-        vkDestroyFramebuffer(m_RenderData.m_Device, frame.m_FrameBuffer, nullptr);
         vkDestroyFence(m_RenderData.m_Device, frame.m_Fence, nullptr);
         vkDestroySemaphore(m_RenderData.m_Device, frame.m_WaitForFrameSemaphore, nullptr);
         vkDestroySemaphore(m_RenderData.m_Device, frame.m_WaitForRenderSemaphore, nullptr);
-    }
-
-    for (auto& view : m_SwapViews)
-    {
-        vkDestroyImageView(m_RenderData.m_Device, view, nullptr);
+        vkDestroyImageView(m_RenderData.m_Device, frame.m_SwapchainView, nullptr);
     }
 
     vkDestroySwapchainKHR(m_RenderData.m_Device, m_SwapChain, nullptr);
@@ -1060,7 +1040,7 @@ bool Renderer::InitPipeline()
      * Add all the stages to the stage buffer.
      */
     m_HelloTriangleStage = AddRenderStage(std::make_unique<RenderStage_HelloTriangle>());
-    m_DeferredStage = AddRenderStage(std::make_unique<RenderStage_Deferred>());
+    //m_DeferredStage = AddRenderStage(std::make_unique<RenderStage_Deferred>());   //TODO
 	
     /*
      * Init the render stages for each frame.
@@ -1073,7 +1053,6 @@ bool Renderer::InitPipeline()
     /*
      * Set up the resources for each frame.
      */
-    m_RenderData.m_FrameData.resize(m_RenderData.m_Settings.m_SwapBufferCount);
     for (auto frameIndex = 0u; frameIndex < m_RenderData.m_Settings.m_SwapBufferCount; ++frameIndex)
     {
         auto& frameData = m_RenderData.m_FrameData[frameIndex];

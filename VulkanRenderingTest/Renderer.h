@@ -1,6 +1,7 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include <cinttypes>
+#include <filesystem>
 #include <iostream>
 #include <vector>
 #include <GLFW/glfw3.h>
@@ -51,7 +52,7 @@ struct Frame
 	VkSemaphore m_WaitForRenderSemaphore;	//The semaphore that is signaled when the command buffer finishes, and the frame can be presented.
 	VkCommandBuffer m_CommandBuffer;		//The graphics command buffer used for drawing and presenting.
 	VkCommandPool m_CommandPool;			//The command pool used to allocate commands for this frame.
-	VkFramebuffer m_FrameBuffer;			//The framebuffer that is bound to the swap chain's image view.
+	VkImageView m_SwapchainView;			//The ImageView into the swapchain for this frame.
 
 	
 };
@@ -82,6 +83,9 @@ struct RendererSettings
 
 	//The format used to output to the screen.
 	VkFormat outputFormat = VK_FORMAT_B8G8R8A8_SRGB;
+
+	//The path where all spir-v shaders are stored.
+	std::string shadersPath = std::filesystem::current_path().string() + "/shaders/output/";
 };
 
 /*
@@ -230,7 +234,6 @@ private:
 	RenderData m_RenderData;
 
 	VkSwapchainKHR m_SwapChain;				//The swapchain for the GLFW window.
-	std::vector<VkImageView> m_SwapViews;	//The views for the swapchain images.
 	
 	VkCommandBuffer m_CopyBuffer;			//The command buffer used to copy resources to the GPU.
 	VkCommandPool m_CopyCommandPool;		//The command pool used for copying data.

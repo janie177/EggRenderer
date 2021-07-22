@@ -1,6 +1,10 @@
 #pragma once
 #include <glm/glm/glm.hpp>
 #include <vulkan/vulkan.h>
+#include <array>
+
+#include "RenderUtility.h"
+#include "vk_mem_alloc.h"
 
 //Forward declare the settings used for rendering.
 struct RenderData;
@@ -77,7 +81,7 @@ public:
 	
 	bool CleanUp(const RenderData& a_RenderData) override;
 	bool RecordCommandBuffer(const RenderData& a_RenderData, VkCommandBuffer& a_CommandBuffer,
-		const uint32_t currentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
+		const uint32_t a_CurrentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
 		std::vector<VkSemaphore>& a_SignalSemaphores, std::vector<VkPipelineStageFlags>& a_WaitStageFlags) override;
 private:
 	VkPipeline m_Pipeline;
@@ -85,6 +89,7 @@ private:
 	VkShaderModule m_FragmentShader;
 	VkPipelineLayout m_PipelineLayout;
 	VkRenderPass m_RenderPass;
+	std::vector<VkFramebuffer> m_FrameBuffers;	//Framebuffers for each frame.
 };
 
 class RenderStage_Deferred : public RenderStage
@@ -106,10 +111,7 @@ private:
 	/*
 	 * Pipeline objects for the deferred rendering stage.
 	 */
-	VkPipelineLayout m_DeferredPipelineLayout;
-	VkPipeline m_DeferredPipeline;
-	VkShaderModule m_DeferredVertexShader;
-	VkShaderModule m_DeferredFragmentShader;
+	PipelineData m_DeferredPipelineData;
 	VkRenderPass m_DeferredRenderPass;
 
 	/*
@@ -120,4 +122,38 @@ private:
 	VkShaderModule m_ShadingVertexShader;
 	VkShaderModule m_ShadingFragmentShader;
 	VkRenderPass m_ShadingRenderPass;
+
+	enum DeferredAttachments
+	{
+		DEFFERED_ATTACHMENT_DEPTH,						//Only stores depth.
+		DEFFERED_ATTACHMENT_POSITIONS,					//Stores the world space position and W component for projection.
+		DEFFERED_ATTACHMENTS_NORMALS_MATERIALIDS,		//Stores the world space normal and material ID in the W component.
+		DEFFERED_ATTACHMENTS_TANGENTS,					//Stores the tangents in the XYX components.
+		DEFFERED_ATTACHMENTS_UV,						//Stores the UV coordinates.
+
+		DEFERRED_OUTPUT_DEPTH,							//The depth output of the deferred pass after shading.
+		DEFERRED_OUTPUT_COLOR,							//The color output for the deferred pass after shading.
+
+		DEFERRED_NUM_ATTACHMENTS						//Last element indicating number of attachments.
+	};
+
+	/*
+     * Storage for the attachments for the deferred stage.
+     */
+	struct DeferredFrame
+	{
+		std::array<VkImage, DEFERRED_NUM_ATTACHMENTS> m_Images;
+		std::array<VmaAllocation, DEFERRED_NUM_ATTACHMENTS> m_ImageAllocations;
+		std::array<VkImageView, DEFERRED_NUM_ATTACHMENTS> m_ImageViews;
+		VkFramebuffer m_DeferredBuffer;
+		VkFramebuffer m_OutputBuffer;
+
+		//Ways to access the deferred images from the processing shader.
+		VkDescriptorPool m_DescriptorPool;
+		VkDescriptorSetLayout m_DescriptorSetLayout;
+		VkDescriptorSet m_DescriptorSet;
+	};
+
+	//Separate buffers for each frame.
+	std::vector<DeferredFrame> m_Frames;
 };

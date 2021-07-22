@@ -198,18 +198,38 @@ bool RenderStage_HelloTriangle::Init(const RenderData& a_RenderData)
         printf("Could not create graphics pipeline!\n");
         return false;
     }
+
+    m_FrameBuffers.resize(a_RenderData.m_Settings.m_SwapBufferCount);
+    for(int i = 0; i < a_RenderData.m_Settings.m_SwapBufferCount; ++i)
+    {
+        VkFramebufferCreateInfo fboInfo{};
+        fboInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fboInfo.renderPass = m_RenderPass;
+        fboInfo.attachmentCount = 1;
+        fboInfo.pAttachments = &a_RenderData.m_FrameData[i].m_SwapchainView;
+        fboInfo.width = a_RenderData.m_Settings.resolutionX;
+        fboInfo.height = a_RenderData.m_Settings.resolutionY;
+        fboInfo.layers = 1;
+
+        if (vkCreateFramebuffer(a_RenderData.m_Device, &fboInfo, nullptr, &m_FrameBuffers[i]) != VK_SUCCESS)
+        {
+            printf("Could not create FBO for frame index %i!\n", i);
+            return false;
+        }
+    }
+
     return true;
 }
 
 bool RenderStage_HelloTriangle::RecordCommandBuffer(const RenderData& a_RenderData, VkCommandBuffer& a_CommandBuffer,
-    const uint32_t currentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
+    const uint32_t a_CurrentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
     std::vector<VkSemaphore>& a_SignalSemaphores, std::vector<VkPipelineStageFlags>& a_WaitStageFlags)
 {
     //Fill the command buffer
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = m_RenderPass;
-    renderPassInfo.framebuffer = a_RenderData.m_FrameData[currentFrameIndex].m_FrameBuffer;
+    renderPassInfo.framebuffer = m_FrameBuffers[a_CurrentFrameIndex];
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = { a_RenderData.m_Settings.resolutionX, a_RenderData.m_Settings.resolutionY };
     VkClearValue clearColor = { a_RenderData.m_Settings.clearColor.r, a_RenderData.m_Settings.clearColor.g, a_RenderData.m_Settings.clearColor.b, a_RenderData.m_Settings.clearColor.a };
@@ -229,6 +249,12 @@ bool RenderStage_HelloTriangle::CleanUp(const RenderData& a_RenderData)
     vkDestroyPipeline(a_RenderData.m_Device, m_Pipeline, nullptr);
     vkDestroyRenderPass(a_RenderData.m_Device, m_RenderPass, nullptr);
     vkDestroyPipelineLayout(a_RenderData.m_Device, m_PipelineLayout, nullptr);
+
+    //Destroy the frame buffers for each frame.
+    for(int i = 0; i < a_RenderData.m_Settings.m_SwapBufferCount; ++i)
+    {
+        vkDestroyFramebuffer(a_RenderData.m_Device, m_FrameBuffers[i], nullptr);
+    }
 
     //Delete the allocated fragment and vertex shaders.
     vkDestroyShaderModule(a_RenderData.m_Device, m_VertexShader, nullptr);
