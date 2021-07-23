@@ -261,6 +261,12 @@ bool Renderer::DrawFrame(const DrawData& a_DrawData)
         return false;
     }
 
+    if(a_DrawData.m_Camera == nullptr || a_DrawData.m_pDrawCalls == nullptr)
+    {
+        printf("A valid camera and draw call pointer has to be specified for DrawData!\n");
+        return false;
+    }
+
     //The frame data for the current frame.
     auto& frameData = m_RenderData.m_FrameData[m_CurrentFrameIndex];
     auto& cmdBuffer = frameData.m_CommandBuffer;
@@ -291,7 +297,7 @@ bool Renderer::DrawFrame(const DrawData& a_DrawData)
     /*
      * Setup data for each stage depending on what has been provided this frame.
      */
-	//TODO pass transforms, meshes 
+    m_DeferredStage->SetDrawData(a_DrawData);
 	
     /*
      * Execute all the render stages.
@@ -536,7 +542,7 @@ bool Renderer::InitVulkan()
         appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
         appInfo.pEngineName = "TestRenderer";
         appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.apiVersion = VK_API_VERSION_1_0;
+        appInfo.apiVersion = VK_API_VERSION_1_2;
         appInfo.pNext = nullptr;
     }
 
@@ -933,7 +939,7 @@ bool Renderer::CreateSwapChain()
         createInfo.flags = 0;
         createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
         createInfo.format = surfaceFormat.format;
-        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;           //Note: Swapchain format is BGRA so swap B and R.
         createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -1039,8 +1045,8 @@ bool Renderer::InitPipeline()
     /*
      * Add all the stages to the stage buffer.
      */
-    m_HelloTriangleStage = AddRenderStage(std::make_unique<RenderStage_HelloTriangle>());
-    //m_DeferredStage = AddRenderStage(std::make_unique<RenderStage_Deferred>());   //TODO
+    //m_HelloTriangleStage = AddRenderStage(std::make_unique<RenderStage_HelloTriangle>());
+    m_DeferredStage = AddRenderStage(std::make_unique<RenderStage_Deferred>());   //TODO
 	
     /*
      * Init the render stages for each frame.

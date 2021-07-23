@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <array>
 
+#include "Resources.h"
 #include "RenderUtility.h"
 #include "vk_mem_alloc.h"
 
@@ -100,41 +101,41 @@ public:
 	 */
 	VkRenderPass& GetRenderPass();
 
+	void SetDrawData(const DrawData& a_Data);
+
 	bool Init(const RenderData& a_RenderData) override;
 
 	bool CleanUp(const RenderData& a_RenderData) override;
 
 	bool RecordCommandBuffer(const RenderData& a_RenderData, VkCommandBuffer& a_CommandBuffer,
-		const uint32_t currentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
+		const uint32_t a_CurrentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
 		std::vector<VkSemaphore>& a_SignalSemaphores, std::vector<VkPipelineStageFlags>& a_WaitStageFlags) override;
 private:
 	/*
-	 * Pipeline objects for the deferred rendering stage.
+	 * Draw call data pointer (valid during the frame).
 	 */
-	PipelineData m_DeferredPipelineData;
-	VkRenderPass m_DeferredRenderPass;
+	const DrawData* m_DrawData;
 
 	/*
-	 * Pipeline objects for the shading stage.
+	 * Pipeline objects for the deferred rendering stage.
 	 */
-	VkPipelineLayout m_ShadingPipelineLayout;
-	VkPipeline m_ShadingPipeline;
-	VkShaderModule m_ShadingVertexShader;
-	VkShaderModule m_ShadingFragmentShader;
-	VkRenderPass m_ShadingRenderPass;
+	PipelineData m_DeferredPipelineData;			//Used to write to the array images (pos, normal, tangent, uv) and to the depth buffer.
+	PipelineData m_DeferredProcessedPipelineData;	//Reads the array images and depth buffer, then outputs to the swapchain.
+	VkRenderPass m_DeferredRenderPass;				//Multiple sub-passes that use the above pipelines.
 
-	enum DeferredAttachments
+	/*
+	 * The indices at which each attachment is bound.
+	 */
+	enum EDeferredFrameAttachments
 	{
-		DEFFERED_ATTACHMENT_DEPTH,						//Only stores depth.
-		DEFFERED_ATTACHMENT_POSITIONS,					//Stores the world space position and W component for projection.
-		DEFFERED_ATTACHMENTS_NORMALS_MATERIALIDS,		//Stores the world space normal and material ID in the W component.
-		DEFFERED_ATTACHMENTS_TANGENTS,					//Stores the tangents in the XYX components.
-		DEFFERED_ATTACHMENTS_UV,						//Stores the UV coordinates.
+	    DEFERRED_ATTACHMENT_DEPTH = 0,
+		DEFERRED_ATTACHMENT_POSITION,
+		DEFERRED_ATTACHMENT_NORMAL,
+		DEFERRED_ATTACHMENT_TANGENT,
+		DEFERRED_ATTACHMENT_UV_MATERIAL_ID,
 
-		DEFERRED_OUTPUT_DEPTH,							//The depth output of the deferred pass after shading.
-		DEFERRED_OUTPUT_COLOR,							//The color output for the deferred pass after shading.
-
-		DEFERRED_NUM_ATTACHMENTS						//Last element indicating number of attachments.
+		//Maximum enum value used to iterate.
+		DEFERRED_ATTACHMENT_MAX_ENUM
 	};
 
 	/*
@@ -142,17 +143,21 @@ private:
      */
 	struct DeferredFrame
 	{
-		std::array<VkImage, DEFERRED_NUM_ATTACHMENTS> m_Images;
-		std::array<VmaAllocation, DEFERRED_NUM_ATTACHMENTS> m_ImageAllocations;
-		std::array<VkImageView, DEFERRED_NUM_ATTACHMENTS> m_ImageViews;
-		VkFramebuffer m_DeferredBuffer;
-		VkFramebuffer m_OutputBuffer;
+		//A 2D texture array for all of the attachments.
+		//Each attachment gets its own view.
+		//The depth is a separate texture due to the different format and type.
+		ImageData m_DeferredArrayImage;
+		ImageData m_DepthImage;
+		VkImageView m_DeferredImageViews[DEFERRED_ATTACHMENT_MAX_ENUM + 1];	//The +1 is for the swap chain's ouput view.
 
-		//Ways to access the deferred images from the processing shader.
-		VkDescriptorPool m_DescriptorPool;
-		VkDescriptorSetLayout m_DescriptorSetLayout;
+		//The framebuffer used to render to the deferred 2d image array.
+		VkFramebuffer m_DeferredBuffer;
 		VkDescriptorSet m_DescriptorSet;
 	};
+
+	//Descriptor pool and set.
+	VkDescriptorPool m_DescriptorPool;
+	VkDescriptorSetLayout m_DescriptorSetLayout;
 
 	//Separate buffers for each frame.
 	std::vector<DeferredFrame> m_Frames;

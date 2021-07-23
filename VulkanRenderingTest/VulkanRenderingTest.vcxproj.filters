@@ -30,6 +30,9 @@
     <ClCompile Include="RenderStage_Deferred.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Transform.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Renderer.h">
@@ -50,6 +53,9 @@
     <ClInclude Include="Resources.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Transform.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\default.frag" />
@@ -59,5 +65,7 @@
     </None>
     <None Include="shaders\deferred.vert" />
     <None Include="shaders\deferred.frag" />
+    <None Include="shaders\deferred_processing.vert" />
+    <None Include="shaders\deferred_processing.frag" />
   </ItemGroup>
 </Project>

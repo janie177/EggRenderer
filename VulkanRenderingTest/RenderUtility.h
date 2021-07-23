@@ -4,6 +4,71 @@
 #include <vulkan/vulkan_core.h>
 #include <fstream>
 
+#include "vk_mem_alloc.h"
+
+struct ImageInfo
+{
+    //The type of the image.
+    VkImageType m_ImageType = VK_IMAGE_TYPE_2D;
+
+    //The dimensions of the image.
+    VkExtent3D m_Dimensions = { 0, 0, 1 };
+
+    //Set to more than 1 in case this is an array texture.
+    uint32_t m_ArrayLayers = 1;
+
+    //Set to higher than one to use mipmaps.
+    uint32_t m_MipLevels = 1;
+
+    //The format of the image.
+    VkFormat m_Format = VK_FORMAT_R32G32B32A32_SFLOAT;
+
+    //How this image will be used.
+    VkImageUsageFlags m_Usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+};
+
+/*
+ * Returned when an image is created.
+ */
+struct ImageData
+{
+    //The image created.
+    VkImage m_Image = nullptr;
+
+    //The allocation for the image.
+    VmaAllocation m_Allocation = nullptr;
+};
+
+/*
+ * Information to create an image view.
+ */
+struct ImageViewInfo
+{
+    //The vulkan image handle that the view is created for.
+    VkImage m_Image = nullptr;
+
+    //The type of view.
+    VkImageViewType m_ViewType = VK_IMAGE_VIEW_TYPE_2D;
+
+    //The lowest accessible mip level for this view.
+    uint32_t m_BaseMipLevel = 0;
+
+    //The lowest accessible array layer for this view.
+    uint32_t m_BaseArrayLayer = 0;
+
+    //The amount of layers accessible for this view.
+    uint32_t m_ArrayLayers = 1;
+
+    //The amount of mip levels accessible to this view.
+    uint32_t m_MipLevels = 1;
+
+    //The format of the image.
+    VkFormat m_Format = VK_FORMAT_R32G32B32A32_SFLOAT;
+
+    //The visible aspects of the image for this view.
+    VkImageAspectFlags m_VisibleAspects = VK_IMAGE_ASPECT_COLOR_BIT | VK_IMAGE_ASPECT_DEPTH_BIT;
+};
+
 /*
  * Information about a shader.
  */
@@ -77,6 +142,25 @@ struct PipelineCreateInfo
 
 	} pushConstants;
 
+    struct
+    {
+        /*
+         * All descriptor set layouts used with this pipeline.
+         */
+        std::vector<VkDescriptorSetLayout> m_Layouts;
+
+    } descriptors;
+
+    struct
+    {
+        /*
+         * The number of attachments used with this pipeline.
+         * This will also be the amount of blend states configured for the pipeline.
+         */
+        uint32_t m_NumAttachments = 1;
+
+    } attachments;
+
     /*
      * Viewport resolution.
      */
@@ -125,6 +209,108 @@ struct PipelineData
 class RenderUtility
 {
 public:
+    static bool CreateImage(const VkDevice& a_Device, const VmaAllocator& a_Allocator, const ImageInfo& a_CreateInfo, ImageData& a_Result)
+    {
+        /*
+         * Ensure that the provided information is correct.
+         */
+        if(a_CreateInfo.m_MipLevels < 1)
+        {
+            printf("Images need a mip level of at least 1.\n");
+            return false;
+        }
+
+        if(a_CreateInfo.m_ArrayLayers < 1)
+        {
+            printf("Images need at least one array layer.\n");
+            return false;
+        }
+
+        if(a_CreateInfo.m_Dimensions.width < 1 || a_CreateInfo.m_Dimensions.height < 1 || a_CreateInfo.m_Dimensions.depth < 1)
+        {
+            printf("Image does not have valid dimensions: %u %u %u.\n", a_CreateInfo.m_Dimensions.width, a_CreateInfo.m_Dimensions.height, a_CreateInfo.m_Dimensions.depth);
+            return false;
+        }   
+
+        ImageData result;
+
+        VkImageCreateInfo imgInfo{};
+        imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imgInfo.arrayLayers = a_CreateInfo.m_ArrayLayers;
+        imgInfo.format = a_CreateInfo.m_Format;
+        imgInfo.extent = a_CreateInfo.m_Dimensions;
+
+        imgInfo.imageType = a_CreateInfo.m_ImageType;
+        imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imgInfo.mipLevels = a_CreateInfo.m_MipLevels;
+        imgInfo.samples = VkSampleCountFlagBits::VK_SAMPLE_COUNT_1_BIT;
+        imgInfo.usage = a_CreateInfo.m_Usage;
+        imgInfo.sharingMode = VkSharingMode::VK_SHARING_MODE_EXCLUSIVE;
+        //This is not needed, only when it's a 3D image and you want to access it as a 2D array.
+        //imgInfo.flags = (imgInfo.arrayLayers > 1 ? VkImageCreateFlagBits::VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT : 0);
+        imgInfo.tiling = VkImageTiling::VK_IMAGE_TILING_OPTIMAL;    //Optimal is the only one that can be used as color attachment. Keep that in mind!!
+
+        VmaAllocationCreateInfo allocationCreateInfo{};
+        allocationCreateInfo.usage = VmaMemoryUsage::VMA_MEMORY_USAGE_GPU_ONLY;
+        allocationCreateInfo.requiredFlags = VkMemoryPropertyFlagBits::VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+        if (vmaCreateImage(a_Allocator, &imgInfo, &allocationCreateInfo, &result.m_Image, &result.m_Allocation, nullptr) != VK_SUCCESS)
+        {
+            printf("Could not create image.\n");
+            return false;
+        }
+
+        a_Result = result;
+        return true;
+    }
+
+    static bool CreateImageView(const VkDevice& a_Device, const ImageViewInfo& a_CreateInfo, VkImageView& a_Result)
+    {
+        if(a_CreateInfo.m_Image == nullptr)
+        {
+            printf("Image view creation needs a valid image handle that is not nullptr.\n");
+            return false;
+        }
+
+        if (a_CreateInfo.m_MipLevels < 1)
+        {
+            printf("Image views need a mip level of at least 1.\n");
+            return false;
+        }
+
+        if (a_CreateInfo.m_ArrayLayers < 1)
+        {
+            printf("Image views need at least one array layer.\n");
+            return false;
+        }
+
+
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.pNext = nullptr;
+        viewInfo.flags = 0;
+        viewInfo.viewType = a_CreateInfo.m_ViewType;
+        viewInfo.format = a_CreateInfo.m_Format;
+        viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        viewInfo.subresourceRange.aspectMask = a_CreateInfo.m_VisibleAspects;
+        viewInfo.subresourceRange.baseMipLevel = a_CreateInfo.m_BaseMipLevel;
+        viewInfo.subresourceRange.levelCount = a_CreateInfo.m_MipLevels;
+        viewInfo.subresourceRange.baseArrayLayer = a_CreateInfo.m_BaseArrayLayer;
+        viewInfo.subresourceRange.layerCount = a_CreateInfo.m_ArrayLayers;
+        viewInfo.image = a_CreateInfo.m_Image;
+
+        if (vkCreateImageView(a_Device, &viewInfo, nullptr, &a_Result) != VK_SUCCESS)
+        {
+            printf("Could not create image view.\n");
+            return false;
+        }
+
+        return true;
+    }
+
 	static bool ReadFile(const std::string& a_File, std::vector<char>& a_Output)
 	{
 	    std::ifstream fileStream(a_File, std::ios::binary | std::ios::ate); //Ate will start the file pointer at the back, so tellg will return the size of the file.
@@ -201,12 +387,6 @@ public:
             return false;
         }
 
-        if (a_CreateInfo.vertexData.m_VertexBindings.size() < 1)
-        {
-            printf("At least one vertex binding must be provided to create a pipeline.\n");
-            return false;
-        }
-
         //Ensure that the bindings referred to by the vertex attributes are actually valid.
         for (auto& vertexAttrib : a_CreateInfo.vertexData.m_VertexAttributes)
         {
@@ -257,7 +437,7 @@ public:
             else
             {
                 result.m_ShaderModules.push_back(module);
-                shaderStages.push_back({ VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, shader.m_ShaderStage, a_Result.m_ShaderModules[index], shader.m_ShaderEntryPoint.c_str(), nullptr });
+                shaderStages.push_back({ VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, shader.m_ShaderStage, result.m_ShaderModules[index], shader.m_ShaderEntryPoint.c_str(), nullptr });
             }
             ++index;
         }
@@ -266,10 +446,10 @@ public:
         //Vertex input
         VkPipelineVertexInputStateCreateInfo vertexInfo{};
         vertexInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInfo.pVertexBindingDescriptions = a_CreateInfo.vertexData.m_VertexBindings.data();
         vertexInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(a_CreateInfo.vertexData.m_VertexBindings.size());
-        vertexInfo.pVertexAttributeDescriptions = a_CreateInfo.vertexData.m_VertexAttributes.data();
         vertexInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(a_CreateInfo.vertexData.m_VertexAttributes.size());
+        vertexInfo.pVertexBindingDescriptions = vertexInfo.vertexBindingDescriptionCount == 0 ? nullptr : a_CreateInfo.vertexData.m_VertexBindings.data();
+        vertexInfo.pVertexAttributeDescriptions = vertexInfo.vertexAttributeDescriptionCount == 0 ? nullptr : a_CreateInfo.vertexData.m_VertexAttributes.data();
 
         //Input assembly state
         VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -339,19 +519,22 @@ public:
         colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
         colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
+        std::vector< VkPipelineColorBlendAttachmentState> blending;
+        blending.resize(a_CreateInfo.attachments.m_NumAttachments, colorBlendAttachment);
+
         VkPipelineColorBlendStateCreateInfo colorBlendState{};
         colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         colorBlendState.logicOpEnable = VK_FALSE;
         colorBlendState.logicOp = VK_LOGIC_OP_COPY;
-        colorBlendState.attachmentCount = 1;
-        colorBlendState.pAttachments = &colorBlendAttachment;
+        colorBlendState.attachmentCount = a_CreateInfo.attachments.m_NumAttachments;
+        colorBlendState.pAttachments = blending.data();
         colorBlendState.blendConstants[0] = 0.0f;
 
         //The pipeline layout.
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 0;
-        pipelineLayoutInfo.pSetLayouts = nullptr;
+        pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(a_CreateInfo.descriptors.m_Layouts.size());
+        pipelineLayoutInfo.pSetLayouts = (pipelineLayoutInfo.setLayoutCount > 0 ? a_CreateInfo.descriptors.m_Layouts.data() : nullptr);
         pipelineLayoutInfo.pushConstantRangeCount = static_cast<uint32_t>(a_CreateInfo.pushConstants.m_PushConstantRanges.size());
         pipelineLayoutInfo.pPushConstantRanges = pipelineLayoutInfo.pushConstantRangeCount > 0 ? a_CreateInfo.pushConstants.m_PushConstantRanges.data() : nullptr;
 
@@ -392,5 +575,8 @@ public:
             printf("Could not create graphics pipeline!\n");
             return false;
         }
+
+        a_Result = result;
+        return true;
 	}
 };

@@ -9,6 +9,7 @@ layout(location = 0) out vec3 outPosition;
 layout(location = 1) out vec3 outNormal;
 layout(location = 2) out vec3 outTangent;
 layout(location = 3) out vec2 outUvs;
+layout(location = 4) out flat int outMaterialId;
 
 layout( push_constant ) uniform PushData {
   mat4 viewProjectionMatrix;    //The view projection matrix.
@@ -24,6 +25,7 @@ void main()
     outNormal = inNormal;   //TODO transform
     outTangent = inTangent; //TODO transform
     outUvs = inUvs;
+    outMaterialId = 1337;    //TODO
 
     gl_Position = pushData.viewProjectionMatrix * vec4(outPosition, 1.0);
 }

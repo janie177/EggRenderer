@@ -211,6 +211,7 @@
     <ClCompile Include="Renderer.cpp" />
     <ClCompile Include="RenderStage_Deferred.cpp" />
     <ClCompile Include="RenderStage_HelloTriangle.cpp" />
+    <ClCompile Include="Transform.cpp" />
     <ClCompile Include="vk_mem_alloc.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -219,6 +220,7 @@
     <ClInclude Include="RenderStage.h" />
     <ClInclude Include="RenderUtility.h" />
     <ClInclude Include="Resources.h" />
+    <ClInclude Include="Transform.h" />
     <ClInclude Include="vk_mem_alloc.h" />
   </ItemGroup>
   <ItemGroup>
@@ -236,6 +238,8 @@
     <None Include="shaders\default.vert" />
     <None Include="shaders\deferred.frag" />
     <None Include="shaders\deferred.vert" />
+    <None Include="shaders\deferred_processing.frag" />
+    <None Include="shaders\deferred_processing.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
