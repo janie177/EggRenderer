@@ -1,9 +1,9 @@
 #include "Renderer.h"
 #include <memory>
+#include <glm/glm/glm.hpp>
 
 /*
  * Program entry point.
- * TODO: write everything
  */
 int main()
 {
@@ -19,6 +19,7 @@ int main()
     RendererSettings settings;
     settings.debugFlags = DebugPrintFlags::ERROR;
     settings.vSync = true;
+    settings.clearColor = glm::vec4(0.f, 0.5f, 0.9f, 1.f);
 
     auto renderer = std::make_unique<Renderer>();
     Camera camera;
@@ -39,26 +40,56 @@ int main()
         drawData.m_NumDrawCalls = 1;
         drawData.m_pDrawCalls = &drawCall;
         drawData.m_Camera = &camera;
-    	
-        static int frameId = 0;
+
+        //Main loop
         bool run = true;
         while(run)
         {
+            //Draw
             run = renderer->DrawFrame(drawData);
-            ++frameId;
-            printf("Done rendering frame %i.\n", frameId);
 
-        	//Try resizing the pipeline for test.
-            if(frameId == 50)
+            //Update input
+            auto input = renderer->QuerryInput();
+            MouseEvent mEvent;
+            KeyboardEvent kEvent;
+            while(input.GetNextEvent(mEvent))
             {
-                renderer->Resize(1600, 800);
-                camera.UpdateProjection(70.f, 0.1f, 600.f, static_cast<float>(settings.resolutionX) / static_cast<float>(settings.resolutionY));
+                if(mEvent.action == MouseAction::SCROLL)
+                {
+                    
+                }
+                else if(mEvent.action == MouseAction::MOVE_X)
+                {
+                    
+                }
+                else if(mEvent.action == MouseAction::MOVE_Y)
+                {
+                    
+                }
+                else if(mEvent.action == MouseAction::CLICK)
+                {
+                    std::string mbutton = (mEvent.button == MouseButton::MMB ? "MMB" : mEvent.button == MouseButton::RMB ? "RMB" : "LMB");
+                    printf("Mouse button clicked: %s.\n", mbutton.c_str());
+                }
             }
-        	
-        	//Stop to test pipeline cleanup after some frames.
-            if(frameId > 6000)
+            while(input.GetNextEvent(kEvent))
             {
-                run = false;
+                if(kEvent.action == KeyboardAction::KEY_PRESSED)
+                {
+                    printf("Key pressed: %u.\n", kEvent.keyCode);
+
+                    //Stop the program when escape is pressed.
+                    if(kEvent.keyCode == GLFW_KEY_ESCAPE)
+                    {
+                        run = false;
+                    }
+
+                    if(kEvent.keyCode == GLFW_KEY_ENTER)
+                    {
+                        printf("Resizing!\n");
+                        renderer->Resize(!renderer->IsFullScreen(), 1280, 720);
+                    }
+                }
             }
         }
     }

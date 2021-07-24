@@ -8,6 +8,7 @@
 #include <glm/glm/glm.hpp>
 
 #include "ConcurrentRegistry.h"
+#include "InputQueue.h"
 #include "vk_mem_alloc.h"
 #include "RenderStage.h"
 #include "Resources.h"
@@ -59,6 +60,9 @@ struct Frame
 
 struct RendererSettings
 {
+	//The name of the window.
+	std::string windowName = "My Window!";
+
 	//Set to true to enable debug callbacks and validation layers.
 	bool enableDebugMode = true;
 
@@ -71,6 +75,9 @@ struct RendererSettings
 	//Window and swapchain resolution.
 	std::uint32_t resolutionX = 512;
 	std::uint32_t resolutionY = 512;
+
+	//Make the window full-screen or not.
+	bool fullScreen = false;
 
 	//Use vsync or not.
 	bool vSync = true;
@@ -132,7 +139,17 @@ public:
 	/*
 	 * Resize the the rendering output.
 	 */
-	bool Resize(std::uint32_t a_Width, std::uint32_t a_Height);
+	bool Resize(bool a_FullScreen, std::uint32_t a_Width, std::uint32_t a_Height);
+
+	/*
+	 * Returns true if the window is in full-screen mode.
+	 */
+	bool IsFullScreen() const;
+
+	/*
+	 * Get all input events since this function was last called.
+	 */
+	InputData QuerryInput();
 
 	/*
 	 * Destroy the renderer.
@@ -143,6 +160,11 @@ public:
 	 * Draw the next frame.
 	 */
 	bool DrawFrame(const DrawData& a_DrawData);
+
+	/*
+	 * Get the current render resolution.
+	 */
+	glm::vec2 GetResolution() const;
 
 	/*
 	 * Create a mesh resource.
@@ -172,6 +194,14 @@ private:
 	 * Initialize Vulkan context and enable debug layers if specified.
 	 */
 	bool InitVulkan();
+
+	/*
+	 * GLFW callbacks.
+	 */
+	static void KeyCallback(GLFWwindow* a_Window, int a_Key, int a_Scancode, int a_Action, int a_Mods);
+	static void MousePositionCallback(GLFWwindow* a_Window, double a_Xpos, double a_Ypos);
+	static void MouseButtonCallback(GLFWwindow* a_Window, int a_Button, int a_Action, int a_Mods);
+	static void MouseScrollCallback(GLFWwindow* a_Window, double a_Xoffset, double a_Yoffset);
 
 	/*
 	 * Select a GPU and initialize queues. 
@@ -218,11 +248,19 @@ private:
 		void* pUserData);
 
 private:
+	/*
+	 * Global renderer tracking stuff.
+	 */
 	bool m_Initialized;
-
 	uint32_t m_FrameCounter;					//The index of the current frame. Used to track resource usage.
 	uint32_t m_MeshCounter;						//The mesh ID incrementing counter.
-	
+
+	/*
+	 * Input object.
+	 */
+	InputQueue m_InputQueue;
+	glm::vec2 m_LastMousePos;
+
 	/*
      * GLFW Objects.
      */

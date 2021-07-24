@@ -7,6 +7,7 @@
 #include <vulkan/vulkan.h>
 #include <fstream>
 #include <filesystem>
+#include <glm/glm/glm.hpp>
 
 #include "vk_mem_alloc.h"
 
@@ -17,6 +18,8 @@ bool Renderer::Init(const RendererSettings& a_Settings)
         printf("Cannot initialize renderer: already initialized!\n");
         return false;
 	}
+
+    m_LastMousePos = glm::vec2(a_Settings.resolutionX / 2.f, a_Settings.resolutionY / 2.f);
 
 	/*
 	 * Ensure that the settings make sense.
@@ -51,7 +54,18 @@ bool Renderer::Init(const RendererSettings& a_Settings)
     // With GLFW_CLIENT_API set to GLFW_NO_API there will be no OpenGL (ES) context.
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-    m_Window = glfwCreateWindow(a_Settings.resolutionX, a_Settings.resolutionY, "Vulkan Render Test", nullptr, nullptr);
+
+    //Make the window in either full screen or windowed mode.
+    auto* mainMonitor = glfwGetPrimaryMonitor();
+    auto* videoMode = glfwGetVideoMode(mainMonitor);
+    if (a_Settings.fullScreen)
+    {
+        m_Window = glfwCreateWindow(videoMode->width, videoMode->height, a_Settings.windowName.c_str(), mainMonitor, nullptr);
+    }
+    else
+    {
+        m_Window = glfwCreateWindow(a_Settings.resolutionX, a_Settings.resolutionY, a_Settings.windowName.c_str(), nullptr, nullptr);
+    }
 
 
     //Try to initialize the vulkan context.
@@ -106,21 +120,31 @@ bool Renderer::Init(const RendererSettings& a_Settings)
 	return true;
 }
 
-bool Renderer::Resize(std::uint32_t a_Width, std::uint32_t a_Height)
+bool Renderer::Resize(bool a_FullScreen, std::uint32_t a_Width, std::uint32_t a_Height)
 {
 	//If resizing to the same size, just don't do anything.
-    if(a_Width == m_RenderData.m_Settings.resolutionX && a_Height == m_RenderData.m_Settings.resolutionY)
+    if(a_Width == m_RenderData.m_Settings.resolutionX && a_Height == m_RenderData.m_Settings.resolutionY && a_FullScreen == m_RenderData.m_Settings.fullScreen)
     {
         return true;
     }
-
-	//Resize the GLFW window.
-    glfwSetWindowSize(m_Window, a_Width, a_Height);
 	
     //Wait for the pipeline to finish before molesting all the objects.
     for (auto& frame : m_RenderData.m_FrameData)
     {
         vkWaitForFences(m_RenderData.m_Device, 1, &frame.m_Fence, true, std::numeric_limits<uint32_t>::max());
+    }
+
+    //Resize the GLFW window.
+    glfwSetWindowSize(m_Window, a_Width, a_Height);
+    auto* mainMonitor = glfwGetPrimaryMonitor();
+    auto* videoMode = glfwGetVideoMode(mainMonitor);
+    if (a_FullScreen)
+    {
+        glfwSetWindowMonitor(m_Window, mainMonitor, 0, 0, videoMode->width, videoMode->height, videoMode->refreshRate);
+    }
+    else
+    {
+        glfwSetWindowMonitor(m_Window, nullptr, 50, 50, a_Width, a_Height, videoMode->refreshRate);
     }
 	
 	/*
@@ -128,6 +152,7 @@ bool Renderer::Resize(std::uint32_t a_Width, std::uint32_t a_Height)
 	 */
     m_RenderData.m_Settings.resolutionX = a_Width;
     m_RenderData.m_Settings.resolutionY = a_Height;
+    m_RenderData.m_Settings.fullScreen = a_FullScreen;
 
 	//Destroy all the render stages as those were created last.
     for(int i = m_RenderStages.size() - 1; i >= 0; --i)
@@ -180,6 +205,19 @@ bool Renderer::Resize(std::uint32_t a_Width, std::uint32_t a_Height)
 	}
 	
     return true;
+}
+
+bool Renderer::IsFullScreen() const
+{
+    return m_RenderData.m_Settings.fullScreen;
+}
+
+InputData Renderer::QuerryInput()
+{
+    //Retrieve input.
+    glfwPollEvents();
+
+    return m_InputQueue.GetQueuedEvents();
 }
 
 bool Renderer::CleanUp()
@@ -386,6 +424,11 @@ bool Renderer::DrawFrame(const DrawData& a_DrawData)
     ++m_FrameCounter;
 	
 	return true;
+}
+
+glm::vec2 Renderer::GetResolution() const
+{
+    return glm::vec2(m_RenderData.m_Settings.resolutionX, m_RenderData.m_Settings.resolutionY);
 }
 
 std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBuffer, const std::vector<std::uint32_t>& a_IndexBuffer)
@@ -623,7 +666,7 @@ bool Renderer::InitVulkan()
         return false;
     }
 
-    printf("Vulkan instance succesfully created.\n");
+    printf("Vulkan instance successfully created.\n");
 
     /*
      * Bind GLFW and Vulkan.
@@ -634,8 +677,106 @@ bool Renderer::InitVulkan()
         printf("Could not create window surface for Vulkan and GLFW.\n");
         return false;
     }
+    //Store this instance with the window. This allows key callbacks to access the input queue instance.
+    glfwSetWindowUserPointer(m_Window, this);
+
+    glfwSetKeyCallback(m_Window, KeyCallback);
+    glfwSetMouseButtonCallback(m_Window, MouseButtonCallback);
+    glfwSetCursorPosCallback(m_Window, MousePositionCallback);
+    glfwSetScrollCallback(m_Window, MouseScrollCallback);
+
 
     return true;
+}
+
+void Renderer::KeyCallback(GLFWwindow* a_Window, int a_Key, int a_Scancode, int a_Action, int a_Mods)
+{
+    Renderer* renderer = static_cast<Renderer*>(glfwGetWindowUserPointer(a_Window));
+
+    switch (a_Action)
+    {
+    case GLFW_PRESS:
+        renderer->m_InputQueue.AddKeyboardEvent({KeyboardAction::KEY_PRESSED, static_cast<uint16_t>(a_Key)});
+        break;
+    case GLFW_RELEASE:
+        renderer->m_InputQueue.AddKeyboardEvent({ KeyboardAction::KEY_RELEASED, static_cast<uint16_t>(a_Key) });
+        break;
+    default:
+        break;
+    }
+}
+
+void Renderer::MousePositionCallback(GLFWwindow* a_Window, double a_Xpos, double a_Ypos)
+{
+    Renderer* renderer = static_cast<Renderer*>(glfwGetWindowUserPointer(a_Window));
+
+    float deltaX = static_cast<float>(a_Xpos) - renderer->m_LastMousePos.x;
+    float deltaY = static_cast<float>(a_Ypos) - renderer->m_LastMousePos.y;
+    renderer->m_LastMousePos = glm::vec2(a_Xpos, a_Ypos);
+
+    if(deltaX != 0.f)
+    {
+        renderer->m_InputQueue.AddMouseEvent({ MouseAction::MOVE_X, deltaX, MouseButton::NONE});
+    }
+    if (deltaY != 0.f)
+    {
+        renderer->m_InputQueue.AddMouseEvent({ MouseAction::MOVE_Y, deltaY, MouseButton::NONE });
+    }
+}
+
+void Renderer::MouseButtonCallback(GLFWwindow* a_Window, int a_Button, int a_Action, int a_Mods)
+{
+    Renderer* renderer = static_cast<Renderer*>(glfwGetWindowUserPointer(a_Window));
+
+    MouseAction action;
+    MouseButton button;
+
+    switch (a_Action)
+    {
+    case GLFW_PRESS:
+        action = MouseAction::CLICK;
+        break;
+    case GLFW_RELEASE:
+        action = MouseAction::RELEASE;
+        break;
+    default:
+        action = MouseAction::NONE;
+        break;
+    }
+
+    switch (a_Button)
+    {
+    case GLFW_MOUSE_BUTTON_LEFT:
+        button = MouseButton::LMB;
+        break;
+    case GLFW_MOUSE_BUTTON_RIGHT:
+        button = MouseButton::RMB;
+        break;
+    case GLFW_MOUSE_BUTTON_MIDDLE:
+        button = MouseButton::MMB;
+        break;
+    default:
+        button = MouseButton::NONE;
+        break;
+    }
+
+    renderer->m_InputQueue.AddMouseEvent({ action, 0, button });
+}
+
+void Renderer::MouseScrollCallback(GLFWwindow* a_Window, double a_Xoffset, double a_Yoffset)
+{
+    Renderer* renderer = static_cast<Renderer*>(glfwGetWindowUserPointer(a_Window));
+
+    if(a_Xoffset != 0.0)
+    {
+        renderer->m_InputQueue.AddMouseEvent({ MouseAction::SCROLL, static_cast<float>(a_Xoffset), MouseButton::NONE});
+    }
+
+    if(a_Yoffset != 0.0)
+    {
+        renderer->m_InputQueue.AddMouseEvent({ MouseAction::SCROLL, static_cast<float>(a_Yoffset), MouseButton::NONE });
+    }
+
 }
 
 bool Renderer::InitDevice()
