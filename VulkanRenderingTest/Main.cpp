@@ -32,6 +32,7 @@ int main()
     settings.debugFlags = DebugPrintFlags::ERROR;
     settings.vSync = true;
     settings.clearColor = glm::vec4(0.f, 0.5f, 0.9f, 1.f);
+    settings.lockCursor = true;
 
     auto renderer = std::make_unique<Renderer>();
     Camera camera;
@@ -54,9 +55,13 @@ int main()
         drawData.m_Camera = &camera;
 
         //Main loop
+        static int frameIndex = 0;
         bool run = true;
         while(run)
         {
+            if (frameIndex % 100 == 0) printf("Frame #%i.\n", frameIndex);
+            ++frameIndex;
+
             //Draw
             run = renderer->DrawFrame(drawData);
 

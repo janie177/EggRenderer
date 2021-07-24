@@ -79,6 +79,9 @@ struct RendererSettings
 	//Make the window full-screen or not.
 	bool fullScreen = false;
 
+	//Lock the cursor to the window or not.
+	bool lockCursor = false;
+
 	//Use vsync or not.
 	bool vSync = true;
 

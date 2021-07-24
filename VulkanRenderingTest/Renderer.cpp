@@ -68,6 +68,10 @@ bool Renderer::Init(const RendererSettings& a_Settings)
         m_FullScreenResolution = { 0, 0 };
         m_Window = glfwCreateWindow(a_Settings.resolutionX, a_Settings.resolutionY, a_Settings.windowName.c_str(), nullptr, nullptr);
     }
+    if(a_Settings.lockCursor)
+    {
+        glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    }
 
 
     //Try to initialize the vulkan context.
