@@ -186,6 +186,16 @@ struct PipelineCreateInfo
         uint32_t m_SubpassIndex = 0;
 
     } renderPass;
+
+    struct
+    {
+        VkFrontFace m_FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        /*
+         * The cull mode to use.
+         */
+        VkCullModeFlags m_CullMode = VK_CULL_MODE_NONE;
+    } culling;
 };
 
 /*
@@ -482,8 +492,8 @@ public:
         rasterizationState.rasterizerDiscardEnable = VK_FALSE;  //Disables all input, not sure when this would be useful, maybe when switching menus and not rendering the main scene?
         rasterizationState.polygonMode = VK_POLYGON_MODE_FILL;  //Can draw as lines which is really awesome for debugging and making people think I'm hackerman
         rasterizationState.lineWidth = 1.0f;                    //Line width in case of hackerman mode
-        rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;    //Same as GL
-        rasterizationState.frontFace = VK_FRONT_FACE_CLOCKWISE; //Same as GL
+        rasterizationState.cullMode = a_CreateInfo.culling.m_CullMode;    //Same as GL
+        rasterizationState.frontFace = a_CreateInfo.culling.m_FrontFace; //Same as GL
         rasterizationState.depthBiasEnable = VK_FALSE;          //Useful for shadow mapping to prevent acne.
         rasterizationState.depthBiasConstantFactor = 0.0f;      //^    
         rasterizationState.depthBiasClamp = 0.0f;               //^
@@ -502,7 +512,7 @@ public:
         //The depth state. Stencil is not used for now.
         VkPipelineDepthStencilStateCreateInfo depthStencilState{};
         depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-        depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS;
+        depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
         depthStencilState.depthTestEnable = a_CreateInfo.depth.m_UseDepth;
         depthStencilState.depthWriteEnable = a_CreateInfo.depth.m_WriteDepth;
         depthStencilState.stencilTestEnable = false;

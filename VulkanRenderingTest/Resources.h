@@ -147,7 +147,7 @@ public:
 	 */
 	glm::mat4 CalculateVPMatrix() const
 	{
-		return GetViewMatrix() * GetProjectionMatrix();
+		return GetProjectionMatrix() * GetViewMatrix();
 	}
 
 	/*

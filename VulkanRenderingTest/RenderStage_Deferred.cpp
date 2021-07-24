@@ -368,6 +368,7 @@ bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
         pipelineInfo.pushConstants.m_PushConstantRanges.push_back({ VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(DeferredPushConstants) });
         pipelineInfo.renderPass.m_RenderPass = m_DeferredRenderPass;
         pipelineInfo.attachments.m_NumAttachments = DEFERRED_ATTACHMENT_MAX_ENUM - 1;
+        pipelineInfo.culling.m_CullMode = VK_CULL_MODE_BACK_BIT;    //Cull back facing geometry.
 
         if (!RenderUtility::CreatePipeline(pipelineInfo, a_RenderData.m_Device, a_RenderData.m_Settings.shadersPath, m_DeferredPipelineData))
         {

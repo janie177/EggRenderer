@@ -260,6 +260,7 @@ private:
 	 */
 	InputQueue m_InputQueue;
 	glm::vec2 m_LastMousePos;
+	glm::vec2 m_FullScreenResolution;
 
 	/*
      * GLFW Objects.

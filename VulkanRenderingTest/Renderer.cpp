@@ -60,10 +60,12 @@ bool Renderer::Init(const RendererSettings& a_Settings)
     auto* videoMode = glfwGetVideoMode(mainMonitor);
     if (a_Settings.fullScreen)
     {
+        m_FullScreenResolution = { videoMode->width, videoMode->height };
         m_Window = glfwCreateWindow(videoMode->width, videoMode->height, a_Settings.windowName.c_str(), mainMonitor, nullptr);
     }
     else
     {
+        m_FullScreenResolution = { 0, 0 };
         m_Window = glfwCreateWindow(a_Settings.resolutionX, a_Settings.resolutionY, a_Settings.windowName.c_str(), nullptr, nullptr);
     }
 
@@ -141,6 +143,7 @@ bool Renderer::Resize(bool a_FullScreen, std::uint32_t a_Width, std::uint32_t a_
     if (a_FullScreen)
     {
         glfwSetWindowMonitor(m_Window, mainMonitor, 0, 0, videoMode->width, videoMode->height, videoMode->refreshRate);
+        m_FullScreenResolution = { videoMode->width, videoMode->height };
     }
     else
     {
@@ -428,7 +431,14 @@ bool Renderer::DrawFrame(const DrawData& a_DrawData)
 
 glm::vec2 Renderer::GetResolution() const
 {
-    return glm::vec2(m_RenderData.m_Settings.resolutionX, m_RenderData.m_Settings.resolutionY);
+    if(m_RenderData.m_Settings.fullScreen)
+    {
+        return m_FullScreenResolution;
+    }
+    else
+    {
+        return glm::vec2(m_RenderData.m_Settings.resolutionX, m_RenderData.m_Settings.resolutionY);
+    }
 }
 
 std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBuffer, const std::vector<std::uint32_t>& a_IndexBuffer)

@@ -9,12 +9,24 @@ int main()
 {
     //A cube for testing.
     std::vector<Vertex> vertices{
-        Vertex{glm::vec3{-1.f, -1.f, 0.f}, glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
-        Vertex{glm::vec3{0.f, -1.f, 1.f}, glm::vec3{0.f, 1.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
-        Vertex{glm::vec3{1.f, -1.f, 0.f}, glm::vec3{0.f, 0.f, 1.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
-        Vertex{glm::vec3{0.f, 1.f, 0.f}, glm::vec3{0.4f, 0.2f, 0.6f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}}
+        Vertex{glm::vec3{-1.f, -1.f, -1.f}, glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+        Vertex{glm::vec3{1.f, -1.f, -1.f}, glm::vec3{0.f, 1.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+        Vertex{glm::vec3{1.f, 1.f, -1.f}, glm::vec3{0.f, 0.f, 1.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+        Vertex{glm::vec3{-1.f, 1.f, -1.f}, glm::vec3{0.4f, 0.2f, 0.6f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+        Vertex{glm::vec3{-1.f, -1.f, 1.f}, glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+        Vertex{glm::vec3{1.f, -1.f, 1.f}, glm::vec3{0.f, 1.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+        Vertex{glm::vec3{1.f, 1.f, 1.f}, glm::vec3{0.f, 0.f, 1.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+        Vertex{glm::vec3{-1.f, 1.f, 1.f}, glm::vec3{0.4f, 0.2f, 0.6f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}}
+
     };
-    std::vector<uint32_t> indices{ 0, 3, 1, 1, 3, 2, 2, 3, 0, 0, 1, 2 };
+    std::vector<uint32_t> indices{
+    0, 1, 3, 3, 1, 2,
+    1, 5, 2, 2, 5, 6,
+    5, 4, 6, 6, 4, 7,
+    4, 0, 7, 7, 0, 3,
+    3, 2, 7, 7, 2, 6,
+    4, 5, 0, 0, 5, 1
+    };
 
     RendererSettings settings;
     settings.debugFlags = DebugPrintFlags::ERROR;
@@ -54,17 +66,18 @@ int main()
             KeyboardEvent kEvent;
             while(input.GetNextEvent(mEvent))
             {
+                constexpr float mouseDivider = 400.f;
                 if(mEvent.action == MouseAction::SCROLL)
                 {
                     
                 }
                 else if(mEvent.action == MouseAction::MOVE_X)
                 {
-                    
+                    camera.GetTransform().Rotate(Transform::GetWorldUp(), static_cast<float>(mEvent.value) / -mouseDivider);
                 }
                 else if(mEvent.action == MouseAction::MOVE_Y)
                 {
-                    
+                    camera.GetTransform().Rotate(Transform::GetWorldRight(), static_cast<float>(mEvent.value) / mouseDivider);
                 }
                 else if(mEvent.action == MouseAction::CLICK)
                 {
@@ -72,6 +85,17 @@ int main()
                     printf("Mouse button clicked: %s.\n", mbutton.c_str());
                 }
             }
+
+            constexpr float movementSpeed = 0.01f;
+            const auto forwardState = input.GetKeyState(GLFW_KEY_W);
+            const auto rightState = input.GetKeyState(GLFW_KEY_D);
+            const auto leftState = input.GetKeyState(GLFW_KEY_A);
+            const auto backwardState = input.GetKeyState(GLFW_KEY_S);
+            if(forwardState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetForward() * -movementSpeed);
+            if (rightState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetRight() * movementSpeed);
+            if (leftState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetLeft() * movementSpeed);
+            if (backwardState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetBack() * -movementSpeed);
+
             while(input.GetNextEvent(kEvent))
             {
                 if(kEvent.action == KeyboardAction::KEY_PRESSED)
@@ -86,8 +110,9 @@ int main()
 
                     if(kEvent.keyCode == GLFW_KEY_ENTER)
                     {
-                        printf("Resizing!\n");
                         renderer->Resize(!renderer->IsFullScreen(), 1280, 720);
+                        const auto resolution = renderer->GetResolution();
+                        camera.UpdateProjection(70.f, 0.1f, 1000.f, resolution.x / resolution.y);
                     }
                 }
             }
@@ -111,5 +136,4 @@ int main()
     }
 
     printf("Program execution finished.\nPress any key to continue.\n");
-    getchar();
 }
