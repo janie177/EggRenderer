@@ -7,6 +7,7 @@
 #include <vulkan/vulkan.h>
 #include <fstream>
 #include <filesystem>
+#include <set>
 #include <glm/glm/glm.hpp>
 
 #include "vk_mem_alloc.h"
@@ -387,8 +388,11 @@ bool Renderer::DrawFrame(const DrawData& a_DrawData)
     submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
     submitInfo.pWaitSemaphores = waitSemaphores.data();                                 //Wait for this semaphore so that the frame buffer is actually available when the rendering happens.
     submitInfo.pWaitDstStageMask = waitStageFlags.data();
-	
-    vkQueueSubmit(m_RenderData.m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_Queue, 1, &submitInfo, frameData.m_Fence);
+
+    //Retrieve the first queue in the graphics vector. This is guaranteed to support presenting.
+    const auto& queue = m_RenderData.m_GraphicsQueues[0];
+
+    vkQueueSubmit(queue.m_Queue, 1, &submitInfo, frameData.m_Fence);
 
     //Start building the command buffer.
     VkPresentInfoKHR presentInfo{};
@@ -399,7 +403,7 @@ bool Renderer::DrawFrame(const DrawData& a_DrawData)
     presentInfo.pSwapchains = &m_SwapChain;
     presentInfo.pImageIndices = &m_CurrentFrameIndex;
     presentInfo.pResults = nullptr;
-    vkQueuePresentKHR(m_RenderData.m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_Queue, &presentInfo);
+    vkQueuePresentKHR(queue.m_Queue, &presentInfo);
 
     //Every time a full swap chain has been consumed, remove unused resources.
 	if(m_FrameCounter % m_RenderData.m_Settings.m_SwapBufferCount == 0)
@@ -560,8 +564,10 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
     fenceInfo.pNext = nullptr;
     vkCreateFence(m_RenderData.m_Device, &fenceInfo, nullptr, &uploadFence);
 
+    const auto& transferQueue = m_RenderData.m_TransferQueues[0].m_Queue;
+
     //Submit the work and then wait for the fence to be signaled.
-    vkQueueSubmit(m_RenderData.m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_TRANSFER)].m_Queue, 1, &submitInfo, uploadFence);
+    vkQueueSubmit(transferQueue, 1, &submitInfo, uploadFence);
     vkWaitForFences(m_RenderData.m_Device, 1, &uploadFence, true, std::numeric_limits<uint32_t>::max());
 
     //Free the staging buffer
@@ -832,73 +838,10 @@ bool Renderer::InitDevice()
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());  //And then called again to actually write to it. ..... .. ... 
 
+    printf("Number of GPU queue families found: %i.\n", queueFamilyCount);
+
     //Assign the device.
     m_RenderData.m_PhysicalDevice = device;
-
-    //Keep track of the queue indices and whether or not a queue was found yet.
-    bool queueFound[3] = {false, false, false};
-    std::uint32_t queueFamIndex[3] = {0, 0, 0};
-    std::uint32_t queueIndex[3] = { 0, 0, 0 };
-    VkQueueFlagBits queueFlags[3]{ VK_QUEUE_GRAPHICS_BIT, VK_QUEUE_COMPUTE_BIT, VK_QUEUE_TRANSFER_BIT };
-
-    //Vector containing the IDs of every queue that is used. Has to be unique.
-    //The reason is that vulkan devices need to know exactly which queue families are used, and you can only specify each once.
-    //A family can support multiple flags, which means it can have all queues in it. That's why it needs to be separately tracked.
-    //I could have one queue family with all my different queues inside it(with different queue indexes within the family).
-    //Amount of queues per family also needs to be tracked.
-    std::vector<std::pair<std::uint32_t, std::uint32_t>> uniqueQueueIds;
-
-    uint32_t queueFamilyIdx = 0;
-    for (const VkQueueFamilyProperties& queueFamily : queueFamilies)
-    {
-        bool used = false;
-        std::uint32_t usedIndex = 0;
-        //Check for graphics queue if not yet found. Separate because it needs to be able to present.
-        if (queueFamily.queueFlags & queueFlags[0] && !queueFound[static_cast<uint32_t>(QueueType::QUEUE_TYPE_GRAPHICS)])
-        {
-            VkBool32 presentSupport;
-            vkGetPhysicalDeviceSurfaceSupportKHR(device, queueFamilyIdx, m_RenderData.m_Surface, &presentSupport);
-            if (presentSupport)
-            {
-                queueFound[0] = true;
-                queueFamIndex[0] = queueFamilyIdx;
-                queueIndex[0] = usedIndex;
-                used = true;
-                ++usedIndex;
-            }
-        }
-
-        //Find other queue types.
-        for(int i = 1; i < 3; ++i)
-        {
-            if (queueFamily.queueFlags & queueFlags[i] && !queueFound[i] && usedIndex < queueFamily.queueCount)
-            {
-
-                queueFound[i] = true;
-                queueFamIndex[i] = queueFamilyIdx;
-                queueIndex[i] = usedIndex;
-                used = true;
-                ++usedIndex;
-            }
-        }
-
-        if(used)
-        {
-            uniqueQueueIds.emplace_back(queueFamilyIdx, usedIndex);
-        }
-
-        queueFamilyIdx++;
-    }
-
-    //Ensure a queue was found for each.
-    for(int i = 0; i < 3; ++i)
-    {
-        if(!queueFound[i])
-        {
-            printf("Could not find queue of type %i on the GPU.\n", i);
-            return false;
-        }
-    }
 
     if (m_RenderData.m_PhysicalDevice == VK_NULL_HANDLE)
     {
@@ -907,38 +850,180 @@ bool Renderer::InitDevice()
     }
 
     /*
-     * Every queue needs a priority within a family.
+     * Find queues of each type to use.
+     * Vec2 containing Family ID and number of queues available.
      */
-    std::vector<std::vector<float>> priorities;
-    priorities.reserve(uniqueQueueIds.size());  //Reserve to prevent reallocation and then invalid memory.
+    std::vector<glm::uvec2> transferOnlyQueueFamilies;
+    std::vector<glm::uvec2> presentGraphicsQueueFamilies;
+    std::vector<glm::uvec2> genericQueueFamilies;
+    std::vector<glm::uvec2> computeOnlyQueueFamilies;
+    std::vector<glm::uvec2> transferComputeQueueFamilies;
 
-    /*
-     * Create the logic device and queue.
-     */
-    std::vector<VkDeviceQueueCreateInfo> queueCreateInfo;
-    queueCreateInfo.resize(uniqueQueueIds.size());
-    for(int i = 0; i < uniqueQueueIds.size(); ++i)
+    std::set<uint32_t> presentSupportedFamilyIndices;
+
+    int familyIndex = 0;
+    for(auto& properties : queueFamilies)
     {
-        queueCreateInfo[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueCreateInfo[i].pNext = nullptr;
-        queueCreateInfo[i].flags = 0;
-        queueCreateInfo[i].queueFamilyIndex = uniqueQueueIds[i].first;  //Id of the queue family.
-        queueCreateInfo[i].queueCount = uniqueQueueIds[i].second;       //Amount of queues to use within this family.
-
-        //Create a vector containing the priorities. All 1.0 for now.
-        priorities.emplace_back(std::vector<float>());
-        auto& vec = priorities[priorities.size() - 1];
-
-        //One priority per queue in the queue family.
-        for (int j = 0; j < queueCreateInfo[i].queueCount; ++j)
+        bool graphics = (properties.queueFlags & VkQueueFlagBits::VK_QUEUE_GRAPHICS_BIT) != 0;
+        bool compute = (properties.queueFlags & VkQueueFlagBits::VK_QUEUE_COMPUTE_BIT) != 0;
+        bool transfer = (properties.queueFlags & VkQueueFlagBits::VK_QUEUE_TRANSFER_BIT) != 0;
+        VkBool32 presentSupport;
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, familyIndex, m_RenderData.m_Surface, &presentSupport);
+        if(presentSupport)
         {
-            vec.push_back(1.f);
+            presentSupportedFamilyIndices.insert(familyIndex);
         }
-        queueCreateInfo[i].pQueuePriorities = &vec[0];
+
+        //Transfer only
+        if(transfer && !graphics && !compute)
+        {
+            transferOnlyQueueFamilies.emplace_back(glm::uvec2{ familyIndex, properties.queueCount});
+        }
+        //Transfer compute mixed bag.
+        else if(transfer && compute && !graphics)
+        {
+            transferComputeQueueFamilies.emplace_back(glm::uvec2{ familyIndex, properties.queueCount });
+        }
+        //Compute only
+        else if(compute && !transfer && !graphics)
+        {
+            computeOnlyQueueFamilies.emplace_back(glm::uvec2{ familyIndex, properties.queueCount });
+        }
+        //Present mode graphics queue
+        else if(graphics  && presentSupport)
+        {
+            presentGraphicsQueueFamilies.emplace_back(glm::uvec2{ familyIndex, properties.queueCount });
+        }
+        else if(graphics && transfer && compute)
+        {
+            genericQueueFamilies.emplace_back(glm::uvec2{ familyIndex, properties.queueCount });
+        }
+
+        ++familyIndex;
     }
 
     /*
-     * Creat the actual device and specify the queues to use etc.
+     * Each queue gets it's own entry in these vectors. X = family Y = queue index.
+     */
+    std::vector<glm::uvec2> graphicsQueues;
+    std::vector<glm::uvec2> transferQueues;
+    std::vector<glm::uvec2> computeQueues;
+
+    //If there's transfer only families available, use those for transfers.
+    if(!transferOnlyQueueFamilies.empty())
+    {
+        for(auto& family : transferOnlyQueueFamilies)
+        {
+            const auto id = family.x;
+            for (uint32_t i = 0; i < family.y; ++i)
+            {
+                transferQueues.emplace_back(glm::uvec2{ id, i });
+            }
+        }
+    }
+    //Check if there's compute only families available.
+    if(!computeOnlyQueueFamilies.empty())
+    {
+        for (auto& family : computeOnlyQueueFamilies)
+        {
+            const auto id = family.x;
+            for (uint32_t i = 0; i < family.y; ++i)
+            {
+                computeQueues.emplace_back(glm::uvec2{ id, i });
+            }
+        }
+    }
+    //Now check for combined compute and transfer queues.
+    if(!transferComputeQueueFamilies.empty())
+    {
+        std::vector<glm::uvec2> totalQueues;
+        for (auto& family : transferComputeQueueFamilies)
+        {
+            const auto id = family.x;
+            for (uint32_t i = 0; i < family.y; ++i)
+            {
+                totalQueues.emplace_back(glm::uvec2{ id, i });
+            }
+        }
+
+        //If both compute and transfer are empty, divide the queues.
+        if(computeQueues.empty() && transferQueues.empty())
+        {
+            const uint32_t halfwayPoint = totalQueues.size() / 2;
+
+            for(uint32_t i = 0; i < static_cast<uint32_t>(totalQueues.size()); ++i)
+            {
+                if(i < halfwayPoint)
+                {
+                    computeQueues.emplace_back(totalQueues[i]);
+                }
+                else
+                {
+                    transferQueues.emplace_back(totalQueues[i]);
+                }
+            }
+        }
+        //Add to transfer queues only
+        else if(transferQueues.empty())
+        {
+            transferQueues.insert(transferQueues.end(), totalQueues.begin(), totalQueues.end());
+        }
+        //Add to compute queues only.
+        else
+        {
+            computeQueues.insert(computeQueues.end(), totalQueues.begin(), totalQueues.end());
+        }
+    }
+
+    //Add the graphics with present mode queues.
+    if(!presentGraphicsQueueFamilies.empty())
+    {
+        for (auto& family : presentGraphicsQueueFamilies)
+        {
+            const auto id = family.x;
+            for (uint32_t i = 0; i < family.y; ++i)
+            {
+                graphicsQueues.emplace_back(glm::uvec2{ id, i });
+            }
+        }
+    }
+    //Add to graphics queues.
+    if(!genericQueueFamilies.empty())
+    {
+        for (auto& family : genericQueueFamilies)
+        {
+            const auto id = family.x;
+            for (uint32_t i = 0; i < family.y; ++i)
+            {
+                graphicsQueues.emplace_back(glm::uvec2{ id, i });
+            }
+        }
+    }
+
+    /*
+     * Create all the queues.
+     */
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    std::vector<std::vector<float>> priorities;
+    priorities.resize(queueFamilyCount);
+
+    int index = 0;
+    for(auto& queueFamily : queueFamilies)
+    {
+        priorities[index].resize(queueFamily.queueCount, 1.f);
+
+        VkDeviceQueueCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        info.queueCount = queueFamily.queueCount;
+        info.queueFamilyIndex = index;
+        info.pQueuePriorities = priorities[index].data();
+        queueCreateInfos.push_back(info);
+        ++index;
+    }
+
+
+    /*
+     * Create the actual device and specify the queues to use etc.
      */
     VkDeviceCreateInfo createInfo;
     const std::vector<const char*> swapchainExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
@@ -948,9 +1033,9 @@ bool Renderer::InitDevice()
         createInfo.pNext = nullptr;
         createInfo.flags = 0;
 
-        //Create three queues as specified in the struct above (containing the right family index, and queue index is stored in an array).
-        createInfo.queueCreateInfoCount = uniqueQueueIds.size();
-        createInfo.pQueueCreateInfos = &queueCreateInfo[0];
+        //Create the queues defined above.
+        createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+        createInfo.pQueueCreateInfos = queueCreateInfos.data();
 
         createInfo.pEnabledFeatures = nullptr;
         createInfo.enabledExtensionCount = (uint32_t)swapchainExtensions.size();
@@ -976,13 +1061,37 @@ bool Renderer::InitDevice()
      * Get the queues that were initialized for this device.
      * Store the family and queue indices as those are needed later.
      */
-    for(int i = 0; i < 3; ++i)
+    for(auto& queue : graphicsQueues)
     {
         QueueInfo info;
-        info.m_FamilyIndex = queueFamIndex[i];
-        info.m_QueueIndex = queueIndex[i];
-        vkGetDeviceQueue(m_RenderData.m_Device, queueFamIndex[i], queueIndex[i], &info.m_Queue);
-        m_RenderData.m_Queues[i] = info;
+        info.m_Type = QueueType::QUEUE_TYPE_GRAPHICS;
+        info.m_FamilyIndex = queue.x;
+        info.m_QueueIndex = queue.y;
+        vkGetDeviceQueue(m_RenderData.m_Device, queue.x, queue.y, &info.m_Queue);
+        bool present = presentSupportedFamilyIndices.find(queue.x) != presentSupportedFamilyIndices.end();
+
+        info.m_SupportsPresent = present;
+        m_RenderData.m_GraphicsQueues.push_back(info);
+    }
+    for (auto& queue : computeQueues)
+    {
+        QueueInfo info;
+        info.m_Type = QueueType::QUEUE_TYPE_COMPUTE;
+        info.m_FamilyIndex = queue.x;
+        info.m_QueueIndex = queue.y;
+        vkGetDeviceQueue(m_RenderData.m_Device, queue.x, queue.y, &info.m_Queue);
+        info.m_SupportsPresent = false;
+        m_RenderData.m_ComputeQueues.push_back(info);
+    }
+    for (auto& queue : transferQueues)
+    {
+        QueueInfo info;
+        info.m_Type = QueueType::QUEUE_TYPE_TRANSFER;
+        info.m_FamilyIndex = queue.x;
+        info.m_QueueIndex = queue.y;
+        vkGetDeviceQueue(m_RenderData.m_Device, queue.x, queue.y, &info.m_Queue);
+        info.m_SupportsPresent = false;
+        m_RenderData.m_TransferQueues.push_back(info);
     }
 
     printf("Vulkan device and queues successfully initialized.\n");
@@ -1181,7 +1290,7 @@ bool Renderer::InitPipeline()
     copyPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     copyPoolInfo.pNext = nullptr;
     copyPoolInfo.flags = 0;
-    copyPoolInfo.queueFamilyIndex = m_RenderData.m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_TRANSFER)].m_FamilyIndex;
+    copyPoolInfo.queueFamilyIndex = m_RenderData.m_TransferQueues[0].m_FamilyIndex;
     if (vkCreateCommandPool(m_RenderData.m_Device, &copyPoolInfo, nullptr, &m_CopyCommandPool) != VK_SUCCESS)
     {
         printf("Could not create copy command pool!\n");
@@ -1219,7 +1328,7 @@ bool Renderer::InitPipeline()
         auto& frameData = m_RenderData.m_FrameData[frameIndex];
 
         VkCommandPoolCreateInfo poolInfo{};
-        poolInfo.queueFamilyIndex = m_RenderData.m_Queues[static_cast<unsigned>(QueueType::QUEUE_TYPE_GRAPHICS)].m_FamilyIndex;
+        poolInfo.queueFamilyIndex = m_RenderData.m_GraphicsQueues[0].m_FamilyIndex;
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         poolInfo.flags = 0;
 

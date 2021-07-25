@@ -96,10 +96,14 @@ int main()
             const auto rightState = input.GetKeyState(GLFW_KEY_D);
             const auto leftState = input.GetKeyState(GLFW_KEY_A);
             const auto backwardState = input.GetKeyState(GLFW_KEY_S);
+            const auto upState = input.GetKeyState(GLFW_KEY_E);
+            const auto downState = input.GetKeyState(GLFW_KEY_Q);
             if(forwardState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetForward() * -movementSpeed);
             if (rightState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetRight() * movementSpeed);
             if (leftState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetLeft() * movementSpeed);
             if (backwardState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetBack() * -movementSpeed);
+            if (upState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetWorldUp() * -movementSpeed);
+            if (downState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetWorldDown() * -movementSpeed);
 
             while(input.GetNextEvent(kEvent))
             {

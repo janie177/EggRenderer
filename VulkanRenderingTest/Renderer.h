@@ -41,6 +41,8 @@ struct QueueInfo
 	VkQueue m_Queue;				//The queue handle.
 	std::uint32_t m_FamilyIndex;	//The queue family index.
 	std::uint32_t m_QueueIndex;		//The queue index within the family.
+	QueueType m_Type;
+	bool m_SupportsPresent;
 };
 
 /*
@@ -108,7 +110,6 @@ struct RenderData
 	               m_PhysicalDevice(nullptr),
 	               m_Device(nullptr),
 	               m_Surface(nullptr),
-	               m_Queues{},
 	               m_Allocator(nullptr),
 				   m_Settings()
 	{
@@ -118,12 +119,19 @@ struct RenderData
 	VkPhysicalDevice m_PhysicalDevice;		//Physical GPU device.
 	VkDevice m_Device;						//Logical device wrapping around physical GPU.
 	VkSurfaceKHR m_Surface;					//The output surface. In this case provided by GLFW.
-	QueueInfo m_Queues[3];					//One queue of each type.
 	VmaAllocator m_Allocator;				//External library handling memory management to keep this project a bit cleaner.
 	std::vector<Frame> m_FrameData;			//Resources for each frame.
 	
 	RendererSettings m_Settings;			//All settings for the renderer.
 
+	/*
+	 * The queues provided by the hardware.
+	 * Graphics queues serve as generic queues. The other two types are not guaranteed to be present, but are specialized if they are.
+	 * Graphics queues are sorted by their ability to present.
+	 */
+	std::vector<QueueInfo> m_GraphicsQueues;
+	std::vector<QueueInfo> m_TransferQueues;
+	std::vector<QueueInfo> m_ComputeQueues;
 };
 
 /*

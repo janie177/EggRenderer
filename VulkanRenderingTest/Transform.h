@@ -150,7 +150,7 @@ public:
     /**
      * Get the global down vector.
      */
-    static constexpr glm::vec3 GetWorldDown() { return -GetWorldDown(); }
+    static constexpr glm::vec3 GetWorldDown() { return -GetWorldUp(); }
 
     /**
      * Get the global left vector.
