@@ -375,12 +375,74 @@ bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
             return false;
         }
     }
+
+    /*
+     * Finally, set up the objects required per frame to upload instance data to the GPU.
+     */
+
+    //Choose the last upload queue, and otherwise the second last or last graphics queue.
+    //I am disgusted by this abhorrent line of code. Apologies to anyone reading this.
+    m_UploadQueue = &(!a_RenderData.m_TransferQueues.empty() ? a_RenderData.m_TransferQueues[a_RenderData.m_TransferQueues.size() - 1]
+    : a_RenderData.m_GraphicsQueues.size() > 2 ? a_RenderData.m_GraphicsQueues[a_RenderData.m_GraphicsQueues.size() - 2]
+    : a_RenderData.m_GraphicsQueues[a_RenderData.m_GraphicsQueues.size() - 1]);
+
+    //Go over each frame and set up the objects.
+    for(uint32_t i = 0; i < a_RenderData.m_Settings.m_SwapBufferCount; ++i)
+    {
+        auto& instanceData = m_Frames[i].m_InstanceData;
+
+        //For the buffers, I just set the size to 0. Then when the frames happen, they will automatically resize as needed.
+        instanceData.m_InstanceBufferSize = 0;
+        instanceData.m_InstanceDataBuffer = nullptr;
+        instanceData.m_InstanceBufferAllocation = nullptr;
+
+        //Create a command pool
+        VkCommandPoolCreateInfo commandPoolInfo{};
+        commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        commandPoolInfo.queueFamilyIndex = m_UploadQueue->m_FamilyIndex;
+        if(vkCreateCommandPool(a_RenderData.m_Device, &commandPoolInfo, nullptr, &instanceData.m_UploadCommandPool) != VK_SUCCESS)
+        {
+            printf("Could not create command pool for instance data uploading in deferred stage!\n");
+            return false;
+        }
+
+        VkCommandBufferAllocateInfo commandBufferInfo{};
+        commandBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        commandBufferInfo.commandBufferCount = 1;
+        commandBufferInfo.commandPool = instanceData.m_UploadCommandPool;
+        commandBufferInfo.level = VkCommandBufferLevel::VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        if(vkAllocateCommandBuffers(a_RenderData.m_Device, &commandBufferInfo, &instanceData.m_UploadCommandBuffer) != VK_SUCCESS)
+        {
+            printf("Could not allocate command buffer to upload frame data with in deferred stage.\n");
+            return false;
+        }
+
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        if(vkCreateSemaphore(a_RenderData.m_Device, &semaphoreInfo, nullptr, &instanceData.m_UploadSemaphore) != VK_SUCCESS)
+        {
+            printf("Could not create semaphore in deferred stage.\n");
+            return false;
+        }
+    }
 	
 	return true;
 }
 
 bool RenderStage_Deferred::CleanUp(const RenderData& a_RenderData)
 {
+    //Destroy per frame instance data
+    for (uint32_t i = 0; i < a_RenderData.m_Settings.m_SwapBufferCount; ++i)
+    {
+        auto& instanceData = m_Frames[i].m_InstanceData;
+        vkDestroyCommandPool(a_RenderData.m_Device, instanceData.m_UploadCommandPool, nullptr);
+        vkDestroySemaphore(a_RenderData.m_Device, instanceData.m_UploadSemaphore, nullptr);
+        if(instanceData.m_InstanceBufferSize != 0)
+        {
+            vmaDestroyBuffer(a_RenderData.m_Allocator, instanceData.m_InstanceDataBuffer, instanceData.m_InstanceBufferAllocation);
+        }
+    }
+
     vkDestroyPipeline(a_RenderData.m_Device, m_DeferredPipelineData.m_Pipeline, nullptr);
     vkDestroyPipelineLayout(a_RenderData.m_Device, m_DeferredPipelineData.m_PipelineLayout, nullptr);
     vkDestroyPipeline(a_RenderData.m_Device, m_DeferredProcessedPipelineData.m_Pipeline, nullptr);

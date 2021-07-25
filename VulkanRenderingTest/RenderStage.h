@@ -9,6 +9,7 @@
 
 //Forward declare the settings used for rendering.
 struct RenderData;
+struct QueueInfo;
 
 /*
  * 128 byte struct to send data to the shader quickly.
@@ -138,6 +139,13 @@ private:
 		DEFERRED_ATTACHMENT_MAX_ENUM
 	};
 
+	struct GpuDrawCallData
+	{
+		std::shared_ptr<Mesh> mesh;
+		uint32_t m_InstanceOffset;
+		uint32_t m_InstanceCount;
+	};
+
 	/*
      * Storage for the attachments for the deferred stage.
      */
@@ -153,7 +161,30 @@ private:
 		//The framebuffer used to render to the deferred 2d image array.
 		VkFramebuffer m_DeferredBuffer;
 		VkDescriptorSet m_DescriptorSet;
+
+		//Instance data per frame.
+		//Frame N uses the instance data of frame N - 1. This allows uploading and rendering to happen concurrently.
+		struct
+		{
+			//Buffer on the GPU containing all instance data for a frame.
+			VmaAllocation m_InstanceBufferAllocation;
+			VkBuffer m_InstanceDataBuffer;
+			size_t m_InstanceBufferSize;
+
+			//The upload command buffer and pool. The semaphore signals when uploading is finished.
+			VkCommandPool m_UploadCommandPool;
+			VkCommandBuffer m_UploadCommandBuffer;
+			VkSemaphore m_UploadSemaphore;
+
+			//A copy of the camera and all offsets and mesh data.
+			Camera m_Camera;
+			std::vector<GpuDrawCallData> m_GpuDrawCallDatas;
+
+		} m_InstanceData;
 	};
+
+	//The queue used for uploading instance data.
+	const QueueInfo* m_UploadQueue;
 
 	//Descriptor pool and set.
 	VkDescriptorPool m_DescriptorPool;

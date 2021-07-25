@@ -522,7 +522,7 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
 
     //First reset the command pool. This automatically resets all associated buffers as well (if flag was not individual)
     vkResetCommandPool(m_RenderData.m_Device, m_CopyCommandPool, 0);
-    //
+
     VkCommandBufferBeginInfo beginInfo;
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -564,7 +564,8 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
     fenceInfo.pNext = nullptr;
     vkCreateFence(m_RenderData.m_Device, &fenceInfo, nullptr, &uploadFence);
 
-    const auto& transferQueue = m_RenderData.m_TransferQueues[0].m_Queue;
+    //Take the first transfer queue, and if not present take the last generic graphics queue.
+    const auto& transferQueue = m_RenderData.m_MeshUploadQueue->m_Queue;
 
     //Submit the work and then wait for the fence to be signaled.
     vkQueueSubmit(transferQueue, 1, &submitInfo, uploadFence);
@@ -1281,6 +1282,9 @@ bool Renderer::CleanUpSwapChain()
 
 bool Renderer::InitPipeline()
 {
+    //Assign the queues used for the main pipeline.
+    m_RenderData.m_MeshUploadQueue = &(!m_RenderData.m_TransferQueues.empty() ? m_RenderData.m_TransferQueues[0] : m_RenderData.m_GraphicsQueues[m_RenderData.m_GraphicsQueues.size() - 1]);
+    m_RenderData.m_PresentQueue = &m_RenderData.m_GraphicsQueues[0];
 
     /*
      * Setup the copy command buffer and pool.
@@ -1290,7 +1294,7 @@ bool Renderer::InitPipeline()
     copyPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     copyPoolInfo.pNext = nullptr;
     copyPoolInfo.flags = 0;
-    copyPoolInfo.queueFamilyIndex = m_RenderData.m_TransferQueues[0].m_FamilyIndex;
+    copyPoolInfo.queueFamilyIndex = m_RenderData.m_MeshUploadQueue->m_FamilyIndex;
     if (vkCreateCommandPool(m_RenderData.m_Device, &copyPoolInfo, nullptr, &m_CopyCommandPool) != VK_SUCCESS)
     {
         printf("Could not create copy command pool!\n");
@@ -1328,7 +1332,7 @@ bool Renderer::InitPipeline()
         auto& frameData = m_RenderData.m_FrameData[frameIndex];
 
         VkCommandPoolCreateInfo poolInfo{};
-        poolInfo.queueFamilyIndex = m_RenderData.m_GraphicsQueues[0].m_FamilyIndex;
+        poolInfo.queueFamilyIndex = m_RenderData.m_PresentQueue->m_FamilyIndex;
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         poolInfo.flags = 0;
 

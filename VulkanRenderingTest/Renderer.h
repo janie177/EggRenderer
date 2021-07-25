@@ -132,6 +132,11 @@ struct RenderData
 	std::vector<QueueInfo> m_GraphicsQueues;
 	std::vector<QueueInfo> m_TransferQueues;
 	std::vector<QueueInfo> m_ComputeQueues;
+
+	//The queue that is used for mesh uploading.
+	QueueInfo* m_MeshUploadQueue = nullptr;
+	//The queue used for the swapchain presenting.
+	QueueInfo* m_PresentQueue = nullptr;
 };
 
 /*
