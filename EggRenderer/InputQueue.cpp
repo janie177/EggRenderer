@@ -1,6 +1,8 @@
 #include "InputQueue.h"
 #include <cassert>
 
+namespace egg
+{
 	InputData::InputData() : m_KeyStates(), m_MouseStates()
 	{
 		//Init keys to not pressed.
@@ -202,3 +204,4 @@
 	{
 		return data.GetMouseButtonState(a_Button);
 	}
+}

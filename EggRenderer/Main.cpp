@@ -7,6 +7,8 @@
  */
 int main()
 {
+    using namespace egg;
+
     //A cube for testing.
     std::vector<Vertex> vertices{
         Vertex{glm::vec3{-1.f, -1.f, -1.f}, glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
