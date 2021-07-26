@@ -77,8 +77,7 @@ private:
  */
 struct MeshInstance
 {
-	glm::mat4 m_Transform;	//The transform of the mesh.
-							//TODO: material
+	glm::mat4 m_Transform;	//The transform of the mesh. //TODO: material
 };
 
 /*

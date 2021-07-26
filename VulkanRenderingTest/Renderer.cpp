@@ -535,14 +535,19 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
 
     /*
      * Copy from CPU memory to CPU only memory on the GPU.
+     * NOTE: Vma buffer into deviceMemory is shared, so offset should also be used!
      */
     void* data;
     //Vertex
-    vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, 0, VK_WHOLE_SIZE, 0, &data);
+    vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, stagingBufferInfo.offset,
+        VK_WHOLE_SIZE, 0, &data);
+
     memcpy(data, a_VertexBuffer.data(), vertexSizeBytes);
     vkUnmapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory);
     //Index
-    vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, indexOffset, VK_WHOLE_SIZE, 0, &data);
+    vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, stagingBufferInfo.offset + indexOffset,
+        VK_WHOLE_SIZE, 0, &data);
+
     memcpy(data, a_IndexBuffer.data(), indexSizeBytes);
     vkUnmapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory);
 

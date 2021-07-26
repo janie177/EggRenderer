@@ -30,10 +30,10 @@ int main()
 
     RendererSettings settings;
     settings.debugFlags = DebugPrintFlags::ERROR | DebugPrintFlags::WARNING;
-    settings.vSync = true;
+    settings.vSync = false;
     settings.clearColor = glm::vec4(0.f, 0.5f, 0.9f, 1.f);
     settings.lockCursor = true;
-    settings.m_SwapBufferCount = 6;
+    settings.m_SwapBufferCount = 2;
 
     auto renderer = std::make_unique<Renderer>();
     Camera camera;
@@ -43,13 +43,12 @@ int main()
     {
         auto mesh = renderer->CreateMesh(vertices, indices);
 
-        constexpr auto NUM_CUBE_INSTANCES = 1;
+        constexpr auto NUM_CUBE_INSTANCES = 100000;
 
     	//Drawing information.
         DrawData drawData;
         DrawCall drawCall;
         std::vector<MeshInstance> meshInstances(NUM_CUBE_INSTANCES);
-
 
         Transform t;
         for(int i = 0; i < NUM_CUBE_INSTANCES; ++i)
@@ -63,7 +62,7 @@ int main()
         drawCall.m_Mesh = mesh;
         drawCall.m_NumInstances = NUM_CUBE_INSTANCES;
         drawCall.m_Transparent = false;
-        drawCall.m_pMeshInstances = &meshInstances[0];
+        drawCall.m_pMeshInstances = meshInstances.data();
         drawData.m_NumDrawCalls = 1;
         drawData.m_pDrawCalls = &drawCall;
         drawData.m_Camera = &camera;

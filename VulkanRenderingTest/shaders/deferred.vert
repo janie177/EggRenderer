@@ -1,4 +1,4 @@
-#version 450
+#version 460 core
 #extension GL_KHR_vulkan_glsl: enable
 #extension GL_EXT_nonuniform_qualifier: enable
 
@@ -26,20 +26,21 @@ struct InstanceData
     mat4 transform;  
 };
 
-layout(std430, binding = 0, set = 0) buffer InstanceDataBuffer
+layout (std430, binding = 0) buffer InstanceDataBuffer
 {
-  InstanceData instances[];
+    InstanceData instances[];
 
-} instanceData;
+} instanceBuffer;
 
 void main() 
 {
     uint offset = floatBitsToInt(pushData.data1.x) + gl_InstanceIndex;
-    mat4 transform = instanceData.instances[offset].transform;
+    mat4 transform = instanceBuffer.instances[offset].transform; //TODO change 0 to offset.
+
+    outNormal = vec3(transform * vec4(inNormal, 0.0));
 
     vec4 pos = transform * vec4(inPosition, 1.0);
     outPosition = vec3(pos);
-    outNormal = vec3(transform * vec4(inNormal, 0.0));
     outTangent = vec3(transform * vec4(inTangent, 0.0));
     outMaterialId = 1337;    //TODO
 

@@ -67,15 +67,16 @@ bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
     //Create a descriptor set for each instance buffer.
     for (uint32_t i = 0; i < static_cast<uint32_t>(m_InstanceDatas.size()); ++i)
     {
+        uint32_t index = static_cast<uint32_t>(m_InstanceDatas.size() - 1) - i;
         VkDescriptorSetAllocateInfo setAllocInfo{};
         setAllocInfo.descriptorPool = m_InstanceDescriptorPool;
         setAllocInfo.descriptorSetCount = 1;
         setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         setAllocInfo.pSetLayouts = &m_InstanceDescriptorSetLayout;
 
-        if (vkAllocateDescriptorSets(a_RenderData.m_Device, &setAllocInfo, &m_InstanceDatas[i].m_InstanceDataDescriptorSet) != VK_SUCCESS)
+        if (vkAllocateDescriptorSets(a_RenderData.m_Device, &setAllocInfo, &m_InstanceDatas[index].m_InstanceDataDescriptorSet) != VK_SUCCESS)
         {
-            printf("Could not allocate instance data descriptor set for frame %i in deferred stage.\n", i);
+            printf("Could not allocate instance data descriptor set for index %i in deferred stage.\n", index);
             return false;
         }
     }
@@ -606,7 +607,7 @@ bool RenderStage_Deferred::RecordCommandBuffer(const RenderData& a_RenderData, V
         vmaAllocateInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
         //Create the GPU buffer with the correct alignment for shader reads.
-        if(vmaCreateBufferWithAlignment(a_RenderData.m_Allocator, &bufferInfo, &vmaAllocateInfo,  512, &currentInstanceData.m_InstanceDataBuffer,
+        if(vmaCreateBufferWithAlignment(a_RenderData.m_Allocator, &bufferInfo, &vmaAllocateInfo,  16, &currentInstanceData.m_InstanceDataBuffer,
             &currentInstanceData.m_InstanceBufferAllocation, &currentInstanceData.m_GpuBufferInfo) != VK_SUCCESS)
         {
             printf("Could not resize GPU buffer for instance data in deferred stage!\n");
@@ -616,7 +617,8 @@ bool RenderStage_Deferred::RecordCommandBuffer(const RenderData& a_RenderData, V
         //Re-use the structs from the previous buffer for the host visible staging buffer.
         bufferInfo.usage = VkBufferUsageFlagBits::VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         vmaAllocateInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-        if(vmaCreateBuffer(a_RenderData.m_Allocator, &bufferInfo, &vmaAllocateInfo, &currentInstanceData.m_InstanceStagingDataBuffer,
+
+        if(vmaCreateBufferWithAlignment(a_RenderData.m_Allocator, &bufferInfo, &vmaAllocateInfo, 16, &currentInstanceData.m_InstanceStagingDataBuffer,
             &currentInstanceData.m_InstanceStagingBufferAllocation, nullptr) != VK_SUCCESS)
         {
             printf("Could not resize staging buffer for instance data in deferred stage!\n");
@@ -651,10 +653,9 @@ bool RenderStage_Deferred::RecordCommandBuffer(const RenderData& a_RenderData, V
     //Stage the instance data and transfer it to the fast GPU memory.
     if (offset != 0)
     {
-        //First map the memory and then place the instance data there.
+        //First map the memory and then place the instance data there. NOTE: device memory is shared for multiple allocations!!! Use the offset too.
         void* data;
-        vkMapMemory(a_RenderData.m_Device, currentInstanceData.m_StagingBufferInfo.deviceMemory, 0, VK_WHOLE_SIZE, 0, &data);
-
+        vkMapMemory(a_RenderData.m_Device, currentInstanceData.m_StagingBufferInfo.deviceMemory, currentInstanceData.m_StagingBufferInfo.offset, currentInstanceData.m_StagingBufferInfo.size, 0, &data);
         size_t byteOffset = 0;
         for(int i = 0; i < m_DrawData->m_NumDrawCalls; ++i)
         {
