@@ -9,27 +9,6 @@ int main()
 {
     using namespace egg;
 
-    //A cube for testing.
-    std::vector<Vertex> vertices{
-        Vertex{glm::vec3{-1.f, -1.f, -1.f}, glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
-        Vertex{glm::vec3{1.f, -1.f, -1.f}, glm::vec3{0.f, 1.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
-        Vertex{glm::vec3{1.f, 1.f, -1.f}, glm::vec3{0.f, 0.f, 1.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
-        Vertex{glm::vec3{-1.f, 1.f, -1.f}, glm::vec3{0.4f, 0.2f, 0.6f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
-        Vertex{glm::vec3{-1.f, -1.f, 1.f}, glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
-        Vertex{glm::vec3{1.f, -1.f, 1.f}, glm::vec3{0.f, 1.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
-        Vertex{glm::vec3{1.f, 1.f, 1.f}, glm::vec3{0.f, 0.f, 1.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
-        Vertex{glm::vec3{-1.f, 1.f, 1.f}, glm::vec3{0.4f, 0.2f, 0.6f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}}
-
-    };
-    std::vector<uint32_t> indices{
-    0, 1, 3, 3, 1, 2,
-    1, 5, 2, 2, 5, 6,
-    5, 4, 6, 6, 4, 7,
-    4, 0, 7, 7, 0, 3,
-    3, 2, 7, 7, 2, 6,
-    4, 5, 0, 0, 5, 1
-    };
-
     RendererSettings settings;
     settings.debugFlags = DebugPrintFlags::ERROR | DebugPrintFlags::WARNING;
     settings.vSync = false;
@@ -43,7 +22,7 @@ int main()
 
     if(renderer->Init(settings))  //This is a bit flag, can do DebugPrintFlags::ERROR | DebugPrintFlags::WARNING etc.
     {
-        auto mesh = renderer->CreateMesh(vertices, indices);
+        auto mesh = renderer->CreateMesh(Shape::PLANE);
 
         constexpr auto NUM_CUBE_INSTANCES = 50000;
 

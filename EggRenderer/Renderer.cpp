@@ -633,6 +633,113 @@ namespace egg
         return meshes;
     }
 
+    std::shared_ptr<Mesh> Renderer::CreateMesh(const Shape a_Shape)
+    {
+        std::vector<Vertex> vertices;
+        std::vector<uint32_t> indices;
+
+        switch (a_Shape)
+        {
+        case Shape::PLANE:
+        {
+            vertices =
+            {
+                Vertex{{1.f, 0.f, 1.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {1.f, 1.f}},
+                Vertex{{-1.f, 0.f, -1.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {0.f, 0.f}},
+                Vertex{{-1.f, 0.f, 1.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {0.f, 1.f}},
+                Vertex{{1.f, 0.f, -1.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {1.f, 0.f}},
+            };
+            indices = { 0, 1, 2, 0, 3, 1 };
+        }
+        break;
+        case Shape::CUBE:
+        {
+            GLfloat cubeVertices[] = { -1.0f, -1.0f, -1.0f, +1.0f, -1.0f, -1.0f, +1.0f, +1.0f, +1.0f, -1.0f, +1.0f, +1.0f, +1.0f, -1.0f, -1.0f, +1.0f,
+
+            -1.0f, +1.0f, -1.0f, +1.0f, -1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, -1.0f, +1.0f,
+
+            -1.0f, -1.0f, -1.0f, +1.0f, -1.0f, +1.0f, -1.0f, +1.0f, +1.0f, +1.0f, -1.0f, +1.0f, +1.0f, -1.0f, -1.0f, +1.0f,
+
+            -1.0f, -1.0f, +1.0f, +1.0f, -1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, -1.0f, +1.0f, +1.0f,
+
+            -1.0f, -1.0f, -1.0f, +1.0f, -1.0f, -1.0f, +1.0f, +1.0f, -1.0f, +1.0f, +1.0f, +1.0f, -1.0f, +1.0f, -1.0f, +1.0f,
+
+            +1.0f, -1.0f, -1.0f, +1.0f, +1.0f, -1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, +1.0f, -1.0f, +1.0f };
+
+
+            GLfloat cubeNormals[] = { 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f,
+
+                0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f,
+
+                0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f,
+
+                0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f,
+
+                -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f,
+
+                +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f };
+
+            GLfloat cubeTangents[] = { +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f,
+
+                +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f,
+
+                -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f,
+
+                +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f,
+
+                0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f, 0.0f, 0.0f, +1.0f,
+
+                0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f };
+
+            GLfloat cubeTexCoords[] =
+            { 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f,
+
+                0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
+
+                1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f,
+
+                0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f,
+
+                1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f };
+
+            //TODO these vertices are not correct. Tangents are made up and normals too.
+            vertices = {
+                Vertex{glm::vec3{-1.f, -1.f, -1.f}, glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+                Vertex{glm::vec3{1.f, -1.f, -1.f}, glm::vec3{0.f, 1.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+                Vertex{glm::vec3{1.f, 1.f, -1.f}, glm::vec3{0.f, 0.f, 1.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+                Vertex{glm::vec3{-1.f, 1.f, -1.f}, glm::vec3{0.4f, 0.2f, 0.6f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+                Vertex{glm::vec3{-1.f, -1.f, 1.f}, glm::vec3{1.f, 0.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+                Vertex{glm::vec3{1.f, -1.f, 1.f}, glm::vec3{0.f, 1.f, 0.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+                Vertex{glm::vec3{1.f, 1.f, 1.f}, glm::vec3{0.f, 0.f, 1.f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}},
+                Vertex{glm::vec3{-1.f, 1.f, 1.f}, glm::vec3{0.4f, 0.2f, 0.6f}, glm::vec3{1.f, 1.f, 1.f}, glm::vec2{0.f, 0.f}}
+
+            };
+            //TODO these indices are also not correct.
+            indices = {
+            0, 1, 3, 3, 1, 2,
+            1, 5, 2, 2, 5, 6,
+            5, 4, 6, 6, 4, 7,
+            4, 0, 7, 7, 0, 3,
+            3, 2, 7, 7, 2, 6,
+            4, 5, 0, 0, 5, 1
+            };
+        }
+        break;
+        case Shape::SPHERE: //Unimplemented for now.
+        default:
+            {
+            printf("Trying to create non-existent shape mesh: %u!\n", static_cast<uint32_t>(a_Shape));
+            return nullptr;
+            }
+            break;
+        }
+
+        //make the mesh!
+        return CreateMesh(vertices, indices);
+    }
+
     std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBuffer, const std::vector<std::uint32_t>& a_IndexBuffer)
     {
         MeshCreateInfo info = { a_VertexBuffer.data(), a_IndexBuffer.data(), static_cast<uint32_t>(a_IndexBuffer.size()), static_cast<uint32_t>(a_VertexBuffer.size()) };

@@ -198,6 +198,11 @@ namespace egg
 		 */
 		std::vector<std::shared_ptr<Mesh>> CreateMeshes(const std::vector<MeshCreateInfo>& a_MeshCreateInfos);
 
+		/*
+		 * Create a mesh of a certain type.
+		 */
+		std::shared_ptr<Mesh> CreateMesh(const Shape a_Shape);
+
 	private:
 		template<typename T>
 		inline T* AddRenderStage(std::unique_ptr<T>&& a_Stage)
