@@ -33,7 +33,7 @@ int main()
     settings.vSync = false;
     settings.clearColor = glm::vec4(0.f, 0.5f, 0.9f, 1.f);
     settings.lockCursor = true;
-    settings.m_SwapBufferCount = 2;
+    settings.m_SwapBufferCount = 3;
 
     auto renderer = std::make_unique<Renderer>();
     Camera camera;
@@ -43,7 +43,7 @@ int main()
     {
         auto mesh = renderer->CreateMesh(vertices, indices);
 
-        constexpr auto NUM_CUBE_INSTANCES = 100000;
+        constexpr auto NUM_CUBE_INSTANCES = 50000;
 
     	//Drawing information.
         DrawData drawData;

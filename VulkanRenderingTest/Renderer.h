@@ -188,6 +188,17 @@ public:
 	 */
 	std::shared_ptr<Mesh> CreateMesh(const std::vector<Vertex>& a_VertexBuffer, const std::vector<std::uint32_t>& a_IndexBuffer);
 
+	/*
+	 * Create a mesh using raw pointers instead of vectors.
+	 */
+	std::shared_ptr<Mesh> CreateMesh(const MeshCreateInfo& a_MeshCreateInfo);
+
+
+	/*
+	 * Create multiple mesh resources.
+	 */
+	std::vector<std::shared_ptr<Mesh>> CreateMeshes(const std::vector<MeshCreateInfo>& a_MeshCreateInfos);
+
 private:
 	template<typename T>
 	inline T* AddRenderStage(std::unique_ptr<T>&& a_Stage)
@@ -292,6 +303,8 @@ private:
 	
 	VkCommandBuffer m_CopyBuffer;			//The command buffer used to copy resources to the GPU.
 	VkCommandPool m_CopyCommandPool;		//The command pool used for copying data.
+	VkFence m_CopyFence;
+	std::mutex m_CopyMutex;
 	
 	std::uint32_t m_CurrentFrameIndex;		//The current frame index.
 	VkSemaphore m_FrameReadySemaphore;		//This semaphore is signaled by the swapchain when it's ready for the next frame. 

@@ -106,6 +106,14 @@ struct DrawCall
 	bool m_Transparent = false;
 };
 
+struct MeshCreateInfo
+{
+	const Vertex* m_VertexBuffer = nullptr;
+	const uint32_t* m_IndexBuffer = nullptr;
+	uint32_t m_NumIndices = 0;
+	uint32_t m_NumVertices = 0;
+};
+
 /*
  * The camera containing the FOV and such.
  */

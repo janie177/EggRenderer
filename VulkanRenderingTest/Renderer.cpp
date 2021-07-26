@@ -279,6 +279,8 @@ bool Renderer::CleanUp()
 	//Clean the swapchain and associated frame buffers.
     CleanUpSwapChain();
 
+    vkDestroyFence(m_RenderData.m_Device, m_CopyFence, nullptr);
+
     vkFreeCommandBuffers(m_RenderData.m_Device, m_CopyCommandPool, 1, &m_CopyBuffer);
     vkDestroyCommandPool(m_RenderData.m_Device, m_CopyCommandPool, nullptr);
 
@@ -479,143 +481,174 @@ glm::vec2 Renderer::GetResolution() const
     }
 }
 
+std::vector<std::shared_ptr<Mesh>> Renderer::CreateMeshes(const std::vector<MeshCreateInfo>& a_MeshCreateInfos)
+{
+    //First lock this mutex so that no other thread can start accessing the upload.
+    std::lock_guard<std::mutex> lock(m_CopyMutex);
+
+    //Wait for previous uploads to end.
+    vkWaitForFences(m_RenderData.m_Device, 1, &m_CopyFence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    meshes.reserve(a_MeshCreateInfos.size());
+
+    for (auto& info : a_MeshCreateInfos)
+    {
+        //If invalid, return nullptr.
+        if(info.m_NumIndices == 0 || info.m_NumVertices == 0 || info.m_IndexBuffer == nullptr || info.m_VertexBuffer == nullptr)
+        {
+            printf("Invalid mesh info provided to mesh creation function! Nullptr or 0 sized arrays.\n");
+            meshes.push_back(nullptr);
+            continue;
+        }
+
+        //Calculate buffer size. Offset to be 16-byte aligned.
+        const auto vertexSizeBytes = sizeof(Vertex) * info.m_NumVertices;
+        const auto indexSizeBytes = sizeof(std::uint32_t) * info.m_NumIndices;
+
+        //Ensure that the vertex buffer has size that aligns to 16 bytes. This is faster: (vertexSizeBytes + 15) & ~15, but adds together right away.
+        const auto vertexPadding = (16 - (vertexSizeBytes % 16)) % 16;
+        const auto bufferSize = vertexSizeBytes + vertexPadding + indexSizeBytes;
+        const size_t vertexOffset = 0;
+        const size_t indexOffset = vertexSizeBytes + vertexPadding;
+
+        //Create the vertex buffer + index buffer. 
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = bufferSize;
+        bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        //Allocate some GPU-only memory.
+        VmaAllocationCreateInfo allocInfo = {};
+        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+        //The GPU buffer and memory now exist.
+        VkBuffer buffer;
+        VmaAllocation allocation;
+        if (vmaCreateBuffer(m_RenderData.m_Allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr) != VK_SUCCESS)
+        {
+            printf("Error! Could not allocate memory for mesh.\n");
+            return {};
+        }
+
+        //Create a buffer on the GPU that can be copied into from the CPU.
+        VkBuffer stagingBuffer;
+        VmaAllocation stagingBufferAllocation;
+        allocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+        bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        if (vmaCreateBuffer(m_RenderData.m_Allocator, &bufferInfo, &allocInfo, &stagingBuffer, &stagingBufferAllocation, nullptr) != VK_SUCCESS)
+        {
+            printf("Error! Could not allocate copy memory for mesh.\n");
+            return {};
+        }
+
+        //Retrieve information about the staging and GPU buffers (handles)
+        VmaAllocationInfo stagingBufferInfo;
+        VmaAllocationInfo gpuBufferInfo;
+        vmaGetAllocationInfo(m_RenderData.m_Allocator, stagingBufferAllocation, &stagingBufferInfo);
+        vmaGetAllocationInfo(m_RenderData.m_Allocator, allocation, &gpuBufferInfo);
+
+
+        /*
+         * Copy from CPU memory to CPU only memory on the GPU.
+         * NOTE: Vma buffer into deviceMemory is shared, so offset should also be used!
+         */
+        void* data;
+        //Vertex
+        vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, stagingBufferInfo.offset,
+            VK_WHOLE_SIZE, 0, &data);
+
+        memcpy(data, info.m_VertexBuffer, vertexSizeBytes);
+        vkUnmapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory);
+        //Index
+        vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, stagingBufferInfo.offset + indexOffset,
+            VK_WHOLE_SIZE, 0, &data);
+
+        memcpy(data, info.m_IndexBuffer, indexSizeBytes);
+        vkUnmapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory);
+
+        /*
+         * Copy from the CPU memory to the GPU using a command buffer
+         */
+
+         //First reset the command pool. This automatically resets all associated buffers as well (if flag was not individual)
+        vkResetCommandPool(m_RenderData.m_Device, m_CopyCommandPool, 0);
+
+        VkCommandBufferBeginInfo beginInfo;
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        beginInfo.pInheritanceInfo = nullptr;
+        beginInfo.pNext = nullptr;
+
+        if (vkBeginCommandBuffer(m_CopyBuffer, &beginInfo) != VK_SUCCESS)
+        {
+            printf("Could not begin recording copy command buffer!\n");
+            return {};
+        }
+
+        //Specify which data to copy where.
+        VkBufferCopy copyInfo{};
+        copyInfo.size = bufferSize;
+        copyInfo.dstOffset = 0;
+        copyInfo.srcOffset = 0;
+        vkCmdCopyBuffer(m_CopyBuffer, stagingBuffer, buffer, 1, &copyInfo);
+
+        //Stop recording.
+        vkEndCommandBuffer(m_CopyBuffer);
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &m_CopyBuffer;
+        submitInfo.pNext = nullptr;
+        submitInfo.pSignalSemaphores = nullptr;
+        submitInfo.pWaitDstStageMask = nullptr;
+        submitInfo.pWaitSemaphores = nullptr;
+        submitInfo.waitSemaphoreCount = 0;
+        submitInfo.signalSemaphoreCount = 0;
+
+        //Take the first transfer queue, and if not present take the last generic graphics queue.
+        const auto& transferQueue = m_RenderData.m_MeshUploadQueue->m_Queue;
+
+        //Submit the work and then wait for the fence to be signaled.
+        vkResetFences(m_RenderData.m_Device, 1, &m_CopyFence);
+        vkQueueSubmit(transferQueue, 1, &submitInfo, m_CopyFence);
+        vkWaitForFences(m_RenderData.m_Device, 1, &m_CopyFence, true, std::numeric_limits<uint32_t>::max());
+
+        //Free the staging buffer
+        vmaDestroyBuffer(m_RenderData.m_Allocator, stagingBuffer, stagingBufferAllocation);
+
+        //Finally create a shared pointer and return a copy of it after putting it in the registry.
+        auto ptr = std::make_shared<Mesh>(m_MeshCounter, allocation, buffer, info.m_NumIndices, info.m_NumVertices, indexOffset, vertexOffset);
+        m_Meshes.Add(ptr);
+
+        ++m_MeshCounter;
+        meshes.push_back(ptr);
+    }
+
+    return meshes;
+}
+
 std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBuffer, const std::vector<std::uint32_t>& a_IndexBuffer)
 {
-    /*
-     * Note: This function creates a staging buffer and fence, then deletes them again. Re-use would be much better in a real application.
-     */
-
-    //Calculate buffer size. Offset to be 16-byte aligned.
-    const auto vertexSizeBytes = sizeof(Vertex) * a_VertexBuffer.size();
-    const auto indexSizeBytes = sizeof(std::uint32_t) * a_IndexBuffer.size();
-
-    //Ensure that the vertex buffer has size that aligns to 16 bytes. This is faster: (vertexSizeBytes + 15) & ~15, but adds together right away.
-    const auto vertexPadding = (16 - (vertexSizeBytes % 16)) % 16;
-    const auto bufferSize = vertexSizeBytes + vertexPadding + indexSizeBytes;
-    const size_t vertexOffset = 0;
-    const size_t indexOffset = vertexSizeBytes + vertexPadding;
-
-    //Create the vertex buffer + index buffer. 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = bufferSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    //Allocate some GPU-only memory.
-    VmaAllocationCreateInfo allocInfo = {};
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-    //The GPU buffer and memory now exist.
-    VkBuffer buffer;
-    VmaAllocation allocation;
-    if (vmaCreateBuffer(m_RenderData.m_Allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr) != VK_SUCCESS)
+    MeshCreateInfo info = { a_VertexBuffer.data(), a_IndexBuffer.data(), static_cast<uint32_t>(a_IndexBuffer.size()), static_cast<uint32_t>(a_VertexBuffer.size()) };
+    auto vector = CreateMeshes(std::vector<MeshCreateInfo>{info});
+    if(!vector.empty())
     {
-        printf("Error! Could not allocate memory for mesh.\n");
-        return nullptr;
+        return vector[0];
     }
+    return nullptr;
+}
 
-    //Create a buffer on the GPU that can be copied into from the CPU.
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingBufferAllocation;
-    allocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    if (vmaCreateBuffer(m_RenderData.m_Allocator, &bufferInfo, &allocInfo, &stagingBuffer, &stagingBufferAllocation, nullptr) != VK_SUCCESS)
+std::shared_ptr<Mesh> Renderer::CreateMesh(const MeshCreateInfo& a_MeshCreateInfo)
+{
+    auto vector = CreateMeshes(std::vector<MeshCreateInfo>{a_MeshCreateInfo});
+    if (!vector.empty())
     {
-        printf("Error! Could not allocate copy memory for mesh.\n");
-        return nullptr;
+        return vector[0];
     }
-
-    //Retrieve information about the staging and GPU buffers (handles)
-    VmaAllocationInfo stagingBufferInfo;
-    VmaAllocationInfo gpuBufferInfo;
-    vmaGetAllocationInfo(m_RenderData.m_Allocator, stagingBufferAllocation, &stagingBufferInfo);
-    vmaGetAllocationInfo(m_RenderData.m_Allocator, allocation, &gpuBufferInfo);
-
-
-    /*
-     * Copy from CPU memory to CPU only memory on the GPU.
-     * NOTE: Vma buffer into deviceMemory is shared, so offset should also be used!
-     */
-    void* data;
-    //Vertex
-    vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, stagingBufferInfo.offset,
-        VK_WHOLE_SIZE, 0, &data);
-
-    memcpy(data, a_VertexBuffer.data(), vertexSizeBytes);
-    vkUnmapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory);
-    //Index
-    vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, stagingBufferInfo.offset + indexOffset,
-        VK_WHOLE_SIZE, 0, &data);
-
-    memcpy(data, a_IndexBuffer.data(), indexSizeBytes);
-    vkUnmapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory);
-
-    /*
-     * Copy from the CPU memory to the GPU using a command buffer
-     */
-
-    //First reset the command pool. This automatically resets all associated buffers as well (if flag was not individual)
-    vkResetCommandPool(m_RenderData.m_Device, m_CopyCommandPool, 0);
-
-    VkCommandBufferBeginInfo beginInfo;
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    beginInfo.pInheritanceInfo = nullptr;
-    beginInfo.pNext = nullptr;
-
-    if (vkBeginCommandBuffer(m_CopyBuffer, &beginInfo) != VK_SUCCESS) 
-    {
-        printf("Could not begin recording copy command buffer!\n");
-        return nullptr;
-    }
-
-    //Specify which data to copy where.
-    VkBufferCopy copyInfo{};
-    copyInfo.size = bufferSize;
-    copyInfo.dstOffset = 0;
-    copyInfo.srcOffset = 0;
-    vkCmdCopyBuffer(m_CopyBuffer, stagingBuffer, buffer, 1, &copyInfo);
-
-    //Stop recording.
-    vkEndCommandBuffer(m_CopyBuffer);
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &m_CopyBuffer;
-    submitInfo.pNext = nullptr;
-    submitInfo.pSignalSemaphores = nullptr;
-    submitInfo.pWaitDstStageMask = nullptr;
-    submitInfo.pWaitSemaphores = nullptr;
-    submitInfo.waitSemaphoreCount = 0;
-    submitInfo.signalSemaphoreCount = 0;
-
-    //Create a fence for synchronization.
-    VkFence uploadFence{};
-    VkFenceCreateInfo fenceInfo{};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = 0;
-    fenceInfo.pNext = nullptr;
-    vkCreateFence(m_RenderData.m_Device, &fenceInfo, nullptr, &uploadFence);
-
-    //Take the first transfer queue, and if not present take the last generic graphics queue.
-    const auto& transferQueue = m_RenderData.m_MeshUploadQueue->m_Queue;
-
-    //Submit the work and then wait for the fence to be signaled.
-    vkQueueSubmit(transferQueue, 1, &submitInfo, uploadFence);
-    vkWaitForFences(m_RenderData.m_Device, 1, &uploadFence, true, std::numeric_limits<uint32_t>::max());
-
-    //Free the staging buffer
-    vmaDestroyBuffer(m_RenderData.m_Allocator, stagingBuffer, stagingBufferAllocation);
-    vkDestroyFence(m_RenderData.m_Device, uploadFence, nullptr);
-
-    //Finally create a shared pointer and return a copy of it after putting it in the registry.
-    auto ptr = std::make_shared<Mesh>(m_MeshCounter, allocation, buffer, a_IndexBuffer.size(), a_VertexBuffer.size(), indexOffset, vertexOffset);
-    m_Meshes.Add(ptr);
-
-    ++m_MeshCounter;
-	return ptr;
+    return nullptr;
 }
 
 bool Renderer::InitVulkan()
@@ -1389,6 +1422,13 @@ bool Renderer::InitPipeline()
             return false;
         }
     }
+
+    //Create a fence for synchronization in the uploading of meshes.
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VkFenceCreateFlagBits::VK_FENCE_CREATE_SIGNALED_BIT;
+    fenceInfo.pNext = nullptr;
+    vkCreateFence(m_RenderData.m_Device, &fenceInfo, nullptr, &m_CopyFence);
 
     printf("Successfully created graphics pipeline!\n");
     return true;
