@@ -243,6 +243,12 @@ bool RenderStage_HelloTriangle::RecordCommandBuffer(const RenderData& a_RenderDa
     return true;
 }
 
+void RenderStage_HelloTriangle::WaitForIdle(const RenderData& a_RenderData)
+{
+    //Nothing to wait for per-frame.
+    return;
+}
+
 bool RenderStage_HelloTriangle::CleanUp(const RenderData& a_RenderData)
 {
     //Pipeline related objects.

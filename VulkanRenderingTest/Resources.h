@@ -99,7 +99,7 @@ struct DrawCall
 	/*
 	 * The amount of mesh instances in the m_pMeshInstances array.
 	 */
-	size_t m_NumInstances = 0;
+	uint32_t m_NumInstances = 0;
 
 	/*
 	 * If true, this geometry is drawn in a separate forward pass after the deferred stage ends.

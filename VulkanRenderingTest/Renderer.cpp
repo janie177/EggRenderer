@@ -140,6 +140,11 @@ bool Renderer::Resize(bool a_FullScreen, std::uint32_t a_Width, std::uint32_t a_
     {
         vkWaitForFences(m_RenderData.m_Device, 1, &frame.m_Fence, true, std::numeric_limits<uint32_t>::max());
     }
+    //Stages may have frame-independent stuff going on too.
+    for(auto& stage : m_RenderStages)
+    {
+        stage->WaitForIdle(m_RenderData);
+    }
 
     //Resize the GLFW window.
     glfwSetWindowSize(m_Window, a_Width, a_Height);
@@ -241,6 +246,11 @@ bool Renderer::CleanUp()
 	{
         vkWaitForFences(m_RenderData.m_Device, 1, &frame.m_Fence, true, std::numeric_limits<uint32_t>::max());
 	}
+    //Stages may have frame-independent stuff going on too.
+    for (auto& stage : m_RenderStages)
+    {
+        stage->WaitForIdle(m_RenderData);
+    }
 
 	//Unload all meshes.
     m_Meshes.RemoveAll([&](Mesh& a_Mesh)
@@ -307,6 +317,13 @@ bool Renderer::DrawFrame(const DrawData& a_DrawData)
         return false;
     }
 
+    //Only draw when the window is not minimized.
+    const bool minimized = glfwGetWindowAttrib(m_Window, GLFW_ICONIFIED);
+    if(minimized)
+    {
+        return true;
+    }
+
     if(a_DrawData.m_Camera == nullptr || a_DrawData.m_pDrawCalls == nullptr)
     {
         printf("A valid camera and draw call pointer has to be specified for DrawData!\n");
@@ -338,7 +355,7 @@ bool Renderer::DrawFrame(const DrawData& a_DrawData)
 	//All semapores the command buffer should wait for and signal.
     std::vector<VkSemaphore> waitSemaphores;
     std::vector<VkSemaphore> signalSemaphores;
-    std::vector<VkPipelineStageFlags> waitStageFlags;       //The stages the wait semaphores should wait in.
+    std::vector<VkPipelineStageFlags> waitStageFlags;       //The stages the wait semaphores should wait before.
 
     /*
      * Setup data for each stage depending on what has been provided this frame.
@@ -392,7 +409,11 @@ bool Renderer::DrawFrame(const DrawData& a_DrawData)
     //Retrieve the first queue in the graphics vector. This is guaranteed to support presenting.
     const auto& queue = m_RenderData.m_GraphicsQueues[0];
 
-    vkQueueSubmit(queue.m_Queue, 1, &submitInfo, frameData.m_Fence);
+    if(vkQueueSubmit(queue.m_Queue, 1, &submitInfo, frameData.m_Fence) != VK_SUCCESS)
+    {
+        printf("Could not submit queue in swapchain!\n");
+        return false;
+    }
 
     //Start building the command buffer.
     VkPresentInfoKHR presentInfo{};
@@ -403,7 +424,12 @@ bool Renderer::DrawFrame(const DrawData& a_DrawData)
     presentInfo.pSwapchains = &m_SwapChain;
     presentInfo.pImageIndices = &m_CurrentFrameIndex;
     presentInfo.pResults = nullptr;
-    vkQueuePresentKHR(queue.m_Queue, &presentInfo);
+
+    if(vkQueuePresentKHR(queue.m_Queue, &presentInfo) != VK_SUCCESS)
+    {
+        printf("Could not present swapchain!\n");
+        return false;
+    }
 
     //Every time a full swap chain has been consumed, remove unused resources.
 	if(m_FrameCounter % m_RenderData.m_Settings.m_SwapBufferCount == 0)
@@ -428,7 +454,11 @@ bool Renderer::DrawFrame(const DrawData& a_DrawData)
      * The semaphore will be signaled as soon as the frame becomes available.
      * Remember it for the next frame, to be used with the queue submit command.
      */
-    vkAcquireNextImageKHR(m_RenderData.m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), frameData.m_WaitForFrameSemaphore, nullptr, &m_CurrentFrameIndex);
+    if(vkAcquireNextImageKHR(m_RenderData.m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), frameData.m_WaitForFrameSemaphore, nullptr, &m_CurrentFrameIndex) != VK_SUCCESS)
+    {
+        printf("Could not get next image in swap chain!\n");
+        return false;
+    }
     m_FrameReadySemaphore = frameData.m_WaitForFrameSemaphore;
 
 	//Increment the frame index.
@@ -508,11 +538,11 @@ std::shared_ptr<Mesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBu
      */
     void* data;
     //Vertex
-    vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, 0, bufferSize, 0, &data);
+    vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, 0, VK_WHOLE_SIZE, 0, &data);
     memcpy(data, a_VertexBuffer.data(), vertexSizeBytes);
     vkUnmapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory);
     //Index
-    vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, indexOffset, bufferSize, 0, &data);
+    vkMapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory, indexOffset, VK_WHOLE_SIZE, 0, &data);
     memcpy(data, a_IndexBuffer.data(), indexSizeBytes);
     vkUnmapMemory(m_RenderData.m_Device, stagingBufferInfo.deviceMemory);
 
@@ -1158,7 +1188,7 @@ bool Renderer::CreateSwapChain()
     /*
      * Create the swap chain images.
      */
-    uint32_t swapBufferCount = surfaceCapabilities.minImageCount + 1;
+    uint32_t swapBufferCount = surfaceCapabilities.minImageCount;
     swapBufferCount = std::max(swapBufferCount, m_RenderData.m_Settings.m_SwapBufferCount);
     swapBufferCount = std::min(surfaceCapabilities.maxImageCount, swapBufferCount);
     m_RenderData.m_Settings.m_SwapBufferCount = swapBufferCount;

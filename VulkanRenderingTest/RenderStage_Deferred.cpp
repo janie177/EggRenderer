@@ -20,10 +20,65 @@ void RenderStage_Deferred::SetDrawData(const DrawData& a_Data)
 
 bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
 {
+    m_InstanceDatas.resize(static_cast<size_t>(a_RenderData.m_Settings.m_SwapBufferCount + 1u)); //One extra buffer since otherwise I'd be uploading to an in flight buffer.
+    m_CurrentInstanceIndex = 0;
     m_Frames.resize(a_RenderData.m_Settings.m_SwapBufferCount);
 
     constexpr auto DEFERRED_COLOR_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
     constexpr auto DEFERRED_DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
+
+    /*
+     * Create the descriptor pool and set layout for the instance data buffers.
+     */
+    VkDescriptorSetLayoutBinding descriptorSetBinding{};
+    descriptorSetBinding.binding = 0;
+    descriptorSetBinding.descriptorCount = 1;
+    descriptorSetBinding.descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorSetBinding.pImmutableSamplers = nullptr;
+    descriptorSetBinding.stageFlags = VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutCreateInfo descriptorLayoutInfo{};
+    descriptorLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    descriptorLayoutInfo.bindingCount = 1;
+    descriptorLayoutInfo.pBindings = &descriptorSetBinding;
+
+    if (vkCreateDescriptorSetLayout(a_RenderData.m_Device, &descriptorLayoutInfo, nullptr, &m_InstanceDescriptorSetLayout) != VK_SUCCESS)
+    {
+        printf("Could not create descriptor set layout for deferred instance data!\n");
+        return false;
+    }
+
+    VkDescriptorPoolSize poolSize{};
+    poolSize.descriptorCount = static_cast<uint32_t>(m_InstanceDatas.size());
+    poolSize.type = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+
+    VkDescriptorPoolCreateInfo poolCreateInfo{};
+    poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolCreateInfo.maxSets = static_cast<uint32_t>(m_InstanceDatas.size());
+    poolCreateInfo.poolSizeCount = 1;
+    poolCreateInfo.pPoolSizes = &poolSize;
+
+    if (vkCreateDescriptorPool(a_RenderData.m_Device, &poolCreateInfo, nullptr, &m_InstanceDescriptorPool) != VK_SUCCESS)
+    {
+        printf("Could not create descriptor pool for deferred instance data!\n");
+        return false;
+    }
+
+    //Create a descriptor set for each instance buffer.
+    for (uint32_t i = 0; i < static_cast<uint32_t>(m_InstanceDatas.size()); ++i)
+    {
+        VkDescriptorSetAllocateInfo setAllocInfo{};
+        setAllocInfo.descriptorPool = m_InstanceDescriptorPool;
+        setAllocInfo.descriptorSetCount = 1;
+        setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        setAllocInfo.pSetLayouts = &m_InstanceDescriptorSetLayout;
+
+        if (vkAllocateDescriptorSets(a_RenderData.m_Device, &setAllocInfo, &m_InstanceDatas[i].m_InstanceDataDescriptorSet) != VK_SUCCESS)
+        {
+            printf("Could not allocate instance data descriptor set for frame %i in deferred stage.\n", i);
+            return false;
+        }
+    }
 
     //Ensure that the format is supported as color attachment.
     VkFormatProperties properties;
@@ -182,7 +237,7 @@ bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
 
 
     //Make the descriptor set layout.
-    if (vkCreateDescriptorSetLayout(a_RenderData.m_Device, &setLayoutInfo, nullptr, &m_DescriptorSetLayout) != VK_SUCCESS)
+    if (vkCreateDescriptorSetLayout(a_RenderData.m_Device, &setLayoutInfo, nullptr, &m_ProcessingDescriptorSetLayout) != VK_SUCCESS)
     {
         printf("Could not create descriptor set layout for deferred render stage.\n");
         return false;
@@ -199,7 +254,7 @@ bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
     descPoolInfo.pPoolSizes = &poolSizes;
 
     //Make the descriptor pool. Pool uses the layout created above.
-    if (vkCreateDescriptorPool(a_RenderData.m_Device, &descPoolInfo, nullptr, &m_DescriptorPool) != VK_SUCCESS)
+    if (vkCreateDescriptorPool(a_RenderData.m_Device, &descPoolInfo, nullptr, &m_ProcessingDescriptorPool) != VK_SUCCESS)
     {
         printf("Could not create descriptor pool for deferred render stage.\n");
         return false;
@@ -305,9 +360,9 @@ bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
         //Make the actual descriptor set. It's created inside the pool above using the layout above.
         VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
         descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        descriptorSetAllocateInfo.pSetLayouts = &m_DescriptorSetLayout;
+        descriptorSetAllocateInfo.pSetLayouts = &m_ProcessingDescriptorSetLayout;
         descriptorSetAllocateInfo.descriptorSetCount = 1;
-        descriptorSetAllocateInfo.descriptorPool = m_DescriptorPool;
+        descriptorSetAllocateInfo.descriptorPool = m_ProcessingDescriptorPool;
         if (vkAllocateDescriptorSets(a_RenderData.m_Device, &descriptorSetAllocateInfo, &frame.m_DescriptorSet) != VK_SUCCESS)
         {
             printf("Could not create descriptor set for deferred render stage.\n");
@@ -342,7 +397,7 @@ bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
         pipelineInfo.renderPass.m_SubpassIndex = 1;     //Use the 2nd sub-pass.
         pipelineInfo.depth.m_UseDepth = false;          //This is just shading so no need to use depth.
         pipelineInfo.depth.m_WriteDepth = false;
-        pipelineInfo.descriptors.m_Layouts.push_back(m_DescriptorSetLayout);
+        pipelineInfo.descriptors.m_Layouts.push_back(m_ProcessingDescriptorSetLayout);
         pipelineInfo.attachments.m_NumAttachments = DEFERRED_ATTACHMENT_MAX_ENUM + 1;
 
         if(!RenderUtility::CreatePipeline(pipelineInfo, a_RenderData.m_Device, a_RenderData.m_Settings.shadersPath, m_DeferredProcessedPipelineData))
@@ -369,6 +424,7 @@ bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
         pipelineInfo.renderPass.m_RenderPass = m_DeferredRenderPass;
         pipelineInfo.attachments.m_NumAttachments = DEFERRED_ATTACHMENT_MAX_ENUM - 1;
         pipelineInfo.culling.m_CullMode = VK_CULL_MODE_BACK_BIT;    //Cull back facing geometry.
+        pipelineInfo.descriptors.m_Layouts.push_back(m_InstanceDescriptorSetLayout);
 
         if (!RenderUtility::CreatePipeline(pipelineInfo, a_RenderData.m_Device, a_RenderData.m_Settings.shadersPath, m_DeferredPipelineData))
         {
@@ -377,7 +433,7 @@ bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
     }
 
     /*
-     * Finally, set up the objects required per frame to upload instance data to the GPU.
+     * Set up the objects required per frame to upload instance data to the GPU.
      */
 
     //Choose the last upload queue, and otherwise the second last or last graphics queue.
@@ -386,15 +442,18 @@ bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
     : a_RenderData.m_GraphicsQueues.size() > 2 ? a_RenderData.m_GraphicsQueues[a_RenderData.m_GraphicsQueues.size() - 2]
     : a_RenderData.m_GraphicsQueues[a_RenderData.m_GraphicsQueues.size() - 1]);
 
-    //Go over each frame and set up the objects.
-    for(uint32_t i = 0; i < a_RenderData.m_Settings.m_SwapBufferCount; ++i)
+    //Set up instance data.
+    for(uint32_t i = 0; i < static_cast<uint32_t>(m_InstanceDatas.size()); ++i)
     {
-        auto& instanceData = m_Frames[i].m_InstanceData;
+        auto& instanceData = m_InstanceDatas[i];
 
         //For the buffers, I just set the size to 0. Then when the frames happen, they will automatically resize as needed.
-        instanceData.m_InstanceBufferSize = 0;
+        instanceData.m_InstanceBufferEntrySize = 0;
         instanceData.m_InstanceDataBuffer = nullptr;
         instanceData.m_InstanceBufferAllocation = nullptr;
+        instanceData.m_InstanceStagingBufferAllocation = nullptr;
+        instanceData.m_InstanceStagingDataBuffer = nullptr;
+
 
         //Create a command pool
         VkCommandPoolCreateInfo commandPoolInfo{};
@@ -424,23 +483,40 @@ bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
             printf("Could not create semaphore in deferred stage.\n");
             return false;
         }
+
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+        if (vkCreateFence(a_RenderData.m_Device, &fenceInfo, nullptr, &instanceData.m_UploadFence) != VK_SUCCESS)
+        {
+            printf("Could not create semaphore in deferred stage.\n");
+            return false;
+        }
     }
-	
+
 	return true;
 }
 
 bool RenderStage_Deferred::CleanUp(const RenderData& a_RenderData)
 {
-    //Destroy per frame instance data
-    for (uint32_t i = 0; i < a_RenderData.m_Settings.m_SwapBufferCount; ++i)
+    //Destroy the descriptor set layout and pool for the instance data.
+    vkDestroyDescriptorPool(a_RenderData.m_Device, m_InstanceDescriptorPool, nullptr);
+    vkDestroyDescriptorSetLayout(a_RenderData.m_Device, m_InstanceDescriptorSetLayout, nullptr);
+
+    //Destroy instance data objects.
+    for (uint32_t i = 0; i < static_cast<uint32_t>(m_InstanceDatas.size()); ++i)
     {
-        auto& instanceData = m_Frames[i].m_InstanceData;
+        auto& instanceData = m_InstanceDatas[i];
         vkDestroyCommandPool(a_RenderData.m_Device, instanceData.m_UploadCommandPool, nullptr);
         vkDestroySemaphore(a_RenderData.m_Device, instanceData.m_UploadSemaphore, nullptr);
-        if(instanceData.m_InstanceBufferSize != 0)
+        vkDestroyFence(a_RenderData.m_Device, instanceData.m_UploadFence, nullptr);
+        if(instanceData.m_InstanceBufferEntrySize != 0)
         {
             vmaDestroyBuffer(a_RenderData.m_Allocator, instanceData.m_InstanceDataBuffer, instanceData.m_InstanceBufferAllocation);
+            vmaDestroyBuffer(a_RenderData.m_Allocator, instanceData.m_InstanceStagingDataBuffer, instanceData.m_InstanceStagingBufferAllocation);
         }
+        instanceData.m_GpuDrawCallDatas.clear();
+        instanceData.m_InstanceBufferEntrySize = 0;
     }
 
     vkDestroyPipeline(a_RenderData.m_Device, m_DeferredPipelineData.m_Pipeline, nullptr);
@@ -472,8 +548,8 @@ bool RenderStage_Deferred::CleanUp(const RenderData& a_RenderData)
         vkDestroyFramebuffer(a_RenderData.m_Device, frame.m_DeferredBuffer, nullptr);
     }
 
-    vkDestroyDescriptorPool(a_RenderData.m_Device, m_DescriptorPool, nullptr);
-    vkDestroyDescriptorSetLayout(a_RenderData.m_Device, m_DescriptorSetLayout, nullptr);
+    vkDestroyDescriptorPool(a_RenderData.m_Device, m_ProcessingDescriptorPool, nullptr);
+    vkDestroyDescriptorSetLayout(a_RenderData.m_Device, m_ProcessingDescriptorSetLayout, nullptr);
 
     vkDestroyRenderPass(a_RenderData.m_Device, m_DeferredRenderPass, nullptr);
 
@@ -484,6 +560,166 @@ bool RenderStage_Deferred::RecordCommandBuffer(const RenderData& a_RenderData, V
 	const uint32_t a_CurrentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
 	std::vector<VkSemaphore>& a_SignalSemaphores, std::vector<VkPipelineStageFlags>& a_WaitStageFlags)
 {
+    /*
+     * Uploading data for the next frame.
+     */
+    auto& frame = m_Frames[a_CurrentFrameIndex];
+    auto& currentInstanceData = m_InstanceDatas[m_CurrentInstanceIndex];
+    const uint32_t previousInstanceDataIndex = (m_CurrentInstanceIndex - 1) > static_cast<uint32_t>(m_InstanceDatas.size()) ? static_cast<uint32_t>(m_InstanceDatas.size()) - 1 : (m_CurrentInstanceIndex - 1);
+    auto& previousInstanceData = m_InstanceDatas[previousInstanceDataIndex];
+
+    //Clear old stuff.
+    currentInstanceData.m_GpuDrawCallDatas.clear();
+    vkResetCommandPool(a_RenderData.m_Device, currentInstanceData.m_UploadCommandPool, 0);
+
+    //Offset into the uploaded data (and will also be equal to the total size after the loop).
+    uint32_t offset = 0;
+    for (int drawCallIndex = 0; drawCallIndex < m_DrawData->m_NumDrawCalls; ++drawCallIndex)
+    {
+        auto& drawCall = m_DrawData->m_pDrawCalls[drawCallIndex];
+        currentInstanceData.m_GpuDrawCallDatas.emplace_back(GpuDrawCallData{drawCall.m_Mesh, offset, drawCall.m_NumInstances});
+        offset += drawCall.m_NumInstances;
+    }
+
+    //If the buffer is too small, allocate 50% extra.
+    if(currentInstanceData.m_InstanceBufferEntrySize < offset)
+    {
+        //First deallocate if a previous allocation exists.
+        if(currentInstanceData.m_InstanceBufferEntrySize != 0)
+        {
+            vmaDestroyBuffer(a_RenderData.m_Allocator, currentInstanceData.m_InstanceDataBuffer, currentInstanceData.m_InstanceBufferAllocation);
+            vmaDestroyBuffer(a_RenderData.m_Allocator, currentInstanceData.m_InstanceStagingDataBuffer, currentInstanceData.m_InstanceStagingBufferAllocation);
+        }
+
+        //Grow by the golden ratio because I guess that's probably the sweet spot between memory usage and average copies per entry.
+        const uint32_t newSize = static_cast<uint32_t>(1.618f * static_cast<float>(offset));
+        currentInstanceData.m_InstanceBufferEntrySize = newSize;
+
+        //The first buffer is the GPU buffer that is not host accessible.
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = static_cast<VkDeviceSize>(newSize) * sizeof(PackedInstanceData);
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        bufferInfo.usage = VkBufferUsageFlagBits::VK_BUFFER_USAGE_TRANSFER_DST_BIT | VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        VmaAllocationCreateInfo vmaAllocateInfo{};
+        vmaAllocateInfo.priority = 1.f;
+        vmaAllocateInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+        //Create the GPU buffer with the correct alignment for shader reads.
+        if(vmaCreateBufferWithAlignment(a_RenderData.m_Allocator, &bufferInfo, &vmaAllocateInfo,  512, &currentInstanceData.m_InstanceDataBuffer,
+            &currentInstanceData.m_InstanceBufferAllocation, &currentInstanceData.m_GpuBufferInfo) != VK_SUCCESS)
+        {
+            printf("Could not resize GPU buffer for instance data in deferred stage!\n");
+            return false;
+        }
+
+        //Re-use the structs from the previous buffer for the host visible staging buffer.
+        bufferInfo.usage = VkBufferUsageFlagBits::VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        vmaAllocateInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+        if(vmaCreateBuffer(a_RenderData.m_Allocator, &bufferInfo, &vmaAllocateInfo, &currentInstanceData.m_InstanceStagingDataBuffer,
+            &currentInstanceData.m_InstanceStagingBufferAllocation, nullptr) != VK_SUCCESS)
+        {
+            printf("Could not resize staging buffer for instance data in deferred stage!\n");
+            return false;
+        }
+
+        //Retrieve information about the allocations.
+        vmaGetAllocationInfo(a_RenderData.m_Allocator, currentInstanceData.m_InstanceStagingBufferAllocation, &currentInstanceData.m_StagingBufferInfo);
+        vmaGetAllocationInfo(a_RenderData.m_Allocator, currentInstanceData.m_InstanceBufferAllocation, &currentInstanceData.m_GpuBufferInfo);
+
+        //Finally update the descriptor set for this frame to point to the new buffer.
+        VkDescriptorBufferInfo descriptorBufferInfo{};
+        descriptorBufferInfo.offset = 0;
+        descriptorBufferInfo.buffer = currentInstanceData.m_InstanceDataBuffer;
+        descriptorBufferInfo.range = VK_WHOLE_SIZE;
+
+        VkWriteDescriptorSet setWrite{};
+        setWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        setWrite.descriptorCount = 1;
+        setWrite.descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        setWrite.dstBinding = 0;
+        setWrite.dstArrayElement = 0;
+        setWrite.dstSet = currentInstanceData.m_InstanceDataDescriptorSet;
+        setWrite.pBufferInfo = &descriptorBufferInfo;
+
+        vkUpdateDescriptorSets(a_RenderData.m_Device, 1, &setWrite, 0, nullptr);
+    }
+
+    //Copy the per frame data over.
+    currentInstanceData.m_Camera = *m_DrawData->m_Camera;
+
+    //Stage the instance data and transfer it to the fast GPU memory.
+    if (offset != 0)
+    {
+        //First map the memory and then place the instance data there.
+        void* data;
+        vkMapMemory(a_RenderData.m_Device, currentInstanceData.m_StagingBufferInfo.deviceMemory, 0, VK_WHOLE_SIZE, 0, &data);
+
+        size_t byteOffset = 0;
+        for(int i = 0; i < m_DrawData->m_NumDrawCalls; ++i)
+        {
+            auto& drawCall = m_DrawData->m_pDrawCalls[i];
+            size_t size = drawCall.m_NumInstances * sizeof(PackedInstanceData);
+            void* start = static_cast<unsigned char*>(data) + byteOffset;
+            memcpy(start, drawCall.m_pMeshInstances, size);
+            byteOffset += size;
+        }
+        vkUnmapMemory(a_RenderData.m_Device, currentInstanceData.m_StagingBufferInfo.deviceMemory);
+
+        VkCommandBufferBeginInfo beginInfo;
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        beginInfo.pInheritanceInfo = nullptr;
+        beginInfo.pNext = nullptr;
+
+        if (vkBeginCommandBuffer(currentInstanceData.m_UploadCommandBuffer, &beginInfo) != VK_SUCCESS)
+        {
+            printf("Could not begin recording copy command buffer in deferred stage!\n");
+            return false;
+        }
+
+        //Specify which data to copy where.
+        VkBufferCopy copyInfo{};
+        copyInfo.size = byteOffset;
+        copyInfo.dstOffset = 0;
+        copyInfo.srcOffset = 0;
+        vkCmdCopyBuffer(currentInstanceData.m_UploadCommandBuffer, currentInstanceData.m_InstanceStagingDataBuffer,
+            currentInstanceData.m_InstanceDataBuffer, 1, &copyInfo);
+
+        //Stop recording.
+        vkEndCommandBuffer(currentInstanceData.m_UploadCommandBuffer);
+
+        //Signal the semaphore when done.
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &currentInstanceData.m_UploadCommandBuffer;
+        submitInfo.pNext = nullptr;
+        submitInfo.pWaitDstStageMask = nullptr;
+        submitInfo.pWaitSemaphores = nullptr;
+        submitInfo.waitSemaphoreCount = 0;
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = &currentInstanceData.m_UploadSemaphore;
+
+        //Take the first transfer queue, and if not present take the last generic graphics queue.
+        const auto& transferQueue = m_UploadQueue->m_Queue;
+
+        //Submit the upload work. The fence provided is not currently used, but useful for debugging.
+        vkResetFences(a_RenderData.m_Device, 1, &currentInstanceData.m_UploadFence);
+        vkQueueSubmit(transferQueue, 1, &submitInfo, currentInstanceData.m_UploadFence);
+    }
+
+    /*
+     * Rendering the current frame.
+     */
+
+    //Wait with the vertex shader stages till the previous frame's instance data has finished uploading (if there's something to wait for).
+    if (!previousInstanceData.m_GpuDrawCallDatas.empty())
+    {
+        a_WaitSemaphores.push_back(previousInstanceData.m_UploadSemaphore);
+        a_WaitStageFlags.push_back(VkPipelineStageFlagBits::VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
+    }
+
     //First set the pipeline and pass
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -491,7 +727,12 @@ bool RenderStage_Deferred::RecordCommandBuffer(const RenderData& a_RenderData, V
     renderPassInfo.framebuffer = m_Frames[a_CurrentFrameIndex].m_DeferredBuffer;
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = { a_RenderData.m_Settings.resolutionX, a_RenderData.m_Settings.resolutionY };
-    VkClearValue clearColor = { a_RenderData.m_Settings.clearColor.r, a_RenderData.m_Settings.clearColor.g, a_RenderData.m_Settings.clearColor.b, a_RenderData.m_Settings.clearColor.a };
+    VkClearValue clearColor = {
+        a_RenderData.m_Settings.clearColor.r,
+        a_RenderData.m_Settings.clearColor.g,
+        a_RenderData.m_Settings.clearColor.b,
+        a_RenderData.m_Settings.clearColor.a
+    };
     VkClearValue clearColors[DEFERRED_ATTACHMENT_MAX_ENUM + 1]
     {
         {1.f}, clearColor, clearColor, clearColor, clearColor, clearColor
@@ -501,27 +742,34 @@ bool RenderStage_Deferred::RecordCommandBuffer(const RenderData& a_RenderData, V
     vkCmdBeginRenderPass(a_CommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineData.m_Pipeline);
 
+    //Put the previous frame's camera in the push constants.
     DeferredPushConstants pushData;
-    pushData.m_VPMatrix = m_DrawData->m_Camera->CalculateVPMatrix();
+    pushData.m_VPMatrix = previousInstanceData.m_Camera.CalculateVPMatrix();
 
     //Bind the push constants.
-    vkCmdPushConstants(a_CommandBuffer, m_DeferredPipelineData.m_PipelineLayout, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(DeferredPushConstants), &pushData);
+    vkCmdPushConstants(a_CommandBuffer, m_DeferredPipelineData.m_PipelineLayout, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT,
+        0, sizeof(DeferredPushConstants), &pushData);
 
-    //TODO bind the instance data like material ID (push constant) and matrices (upload previous frame, then use next frame and bind as SSBO).
+    vkCmdBindDescriptorSets(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineData.m_PipelineLayout,
+        0, 1, &previousInstanceData.m_InstanceDataDescriptorSet, 0, nullptr);
 
-    for(int drawCallIndex = 0; drawCallIndex < m_DrawData->m_NumDrawCalls; ++drawCallIndex)
+    for (auto& gpuDrawData : previousInstanceData.m_GpuDrawCallDatas)
     {
-        auto& drawCall = m_DrawData->m_pDrawCalls[drawCallIndex];
-        const auto buffer = drawCall.m_Mesh->GetBuffer();
-        const auto vertexOffset = drawCall.m_Mesh->GetVertexBufferOffset();
-        const auto indexBufferOffset = drawCall.m_Mesh->GetIndexBufferOffset();
+        auto& mesh = gpuDrawData.m_Mesh;
+        const auto buffer = gpuDrawData.m_Mesh->GetBuffer();
+        const auto vertexOffset = mesh->GetVertexBufferOffset();
+        const auto indexBufferOffset = mesh->GetIndexBufferOffset();
 
         //Vertex and index data is stored in the same buffer.
         vkCmdBindVertexBuffers(a_CommandBuffer, 0, 1, &buffer, &vertexOffset);
         vkCmdBindIndexBuffer(a_CommandBuffer, buffer, indexBufferOffset, VkIndexType::VK_INDEX_TYPE_UINT32);
 
+        //Push constants contain the offset and and total instance count in the first vec4.
+        glm::uvec4 drawLocalData{ gpuDrawData.m_InstanceOffset, gpuDrawData.m_InstanceCount, 0, 0 };
+        vkCmdPushConstants(a_CommandBuffer, m_DeferredPipelineData.m_PipelineLayout, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::uvec4), &drawLocalData);
+
         //Instanced draw call
-        vkCmdDrawIndexed(a_CommandBuffer, static_cast<uint32_t>(drawCall.m_Mesh->GetNumIndices()), static_cast<uint32_t>(drawCall.m_NumInstances), 0, 0, 0);
+        vkCmdDrawIndexed(a_CommandBuffer, static_cast<uint32_t>(mesh->GetNumIndices()), static_cast<uint32_t>(gpuDrawData.m_InstanceCount), 0, 0, 0);
     }
 
     //Next pass!
@@ -531,8 +779,22 @@ bool RenderStage_Deferred::RecordCommandBuffer(const RenderData& a_RenderData, V
     vkCmdBindPipeline(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredProcessedPipelineData.m_Pipeline);
     vkCmdBindDescriptorSets(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredProcessedPipelineData.m_PipelineLayout, 0, 1, &m_Frames[a_CurrentFrameIndex].m_DescriptorSet, 0, nullptr);
     vkCmdDraw(a_CommandBuffer, 3, 1, 0, 0); //Draw a full-screen triangle.
-
     vkCmdEndRenderPass(a_CommandBuffer);
+    
+    //Finally increment the instance index to use for the next frame.
+    ++m_CurrentInstanceIndex;
+    if(m_CurrentInstanceIndex >= static_cast<uint32_t>(m_InstanceDatas.size()))
+    {
+        m_CurrentInstanceIndex = 0;
+    }
 
     return true;
+}
+
+void RenderStage_Deferred::WaitForIdle(const RenderData& a_RenderData)
+{
+    for(auto& data : m_InstanceDatas)
+    {
+        vkWaitForFences(a_RenderData.m_Device, 1, &data.m_UploadFence, true, std::numeric_limits<uint32_t>::max());
+    }
 }

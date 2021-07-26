@@ -42,6 +42,11 @@ public:
 	 * Deallocate any resources that were created by this render stage.
 	 */
 	virtual bool CleanUp(const RenderData& a_RenderData) = 0;
+
+	/*
+	 * Stall the CPU till all in-flight resources are idle.
+	 */
+	virtual void WaitForIdle(const RenderData& a_RenderData) = 0;
 	
 	/*
 	 * Record commands in the given command buffer for this stage.
@@ -85,6 +90,7 @@ public:
 	bool RecordCommandBuffer(const RenderData& a_RenderData, VkCommandBuffer& a_CommandBuffer,
 		const uint32_t a_CurrentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
 		std::vector<VkSemaphore>& a_SignalSemaphores, std::vector<VkPipelineStageFlags>& a_WaitStageFlags) override;
+    void WaitForIdle(const RenderData& a_RenderData) override;
 private:
 	VkPipeline m_Pipeline;
 	VkShaderModule m_VertexShader;
@@ -111,6 +117,8 @@ public:
 	bool RecordCommandBuffer(const RenderData& a_RenderData, VkCommandBuffer& a_CommandBuffer,
 		const uint32_t a_CurrentFrameIndex, std::vector<VkSemaphore>& a_WaitSemaphores,
 		std::vector<VkSemaphore>& a_SignalSemaphores, std::vector<VkPipelineStageFlags>& a_WaitStageFlags) override;
+
+    void WaitForIdle(const RenderData& a_RenderData) override;
 private:
 	/*
 	 * Draw call data pointer (valid during the frame).
@@ -139,11 +147,43 @@ private:
 		DEFERRED_ATTACHMENT_MAX_ENUM
 	};
 
+	/*
+	 * Instance data that is packed and aligned correctly.
+	 * For now just a using directive aliasing the instance struct.
+	 */
+	using PackedInstanceData = MeshInstance;
+
 	struct GpuDrawCallData
 	{
-		std::shared_ptr<Mesh> mesh;
+		std::shared_ptr<Mesh> m_Mesh;
 		uint32_t m_InstanceOffset;
 		uint32_t m_InstanceCount;
+	};
+
+	struct InstanceData
+	{
+		//Buffer on the GPU containing all instance data for a frame.
+		VmaAllocation m_InstanceBufferAllocation;
+		VkBuffer m_InstanceDataBuffer;
+		VmaAllocation m_InstanceStagingBufferAllocation;
+		VkBuffer m_InstanceStagingDataBuffer;
+		VmaAllocationInfo m_StagingBufferInfo;
+		VmaAllocationInfo m_GpuBufferInfo;
+		size_t m_InstanceBufferEntrySize;	//The amount of instance data objects that fit in this buffer.
+
+		//The upload command buffer and pool. The semaphore signals when uploading is finished.
+		VkCommandPool m_UploadCommandPool;
+		VkCommandBuffer m_UploadCommandBuffer;
+		VkSemaphore m_UploadSemaphore;
+		VkFence m_UploadFence;
+
+		//Instance data descriptor set containing the buffer.
+		VkDescriptorSet m_InstanceDataDescriptorSet;
+
+		//A copy of the camera and all offsets and mesh data.
+		Camera m_Camera;
+		std::vector<GpuDrawCallData> m_GpuDrawCallDatas;
+
 	};
 
 	/*
@@ -161,35 +201,23 @@ private:
 		//The framebuffer used to render to the deferred 2d image array.
 		VkFramebuffer m_DeferredBuffer;
 		VkDescriptorSet m_DescriptorSet;
-
-		//Instance data per frame.
-		//Frame N uses the instance data of frame N - 1. This allows uploading and rendering to happen concurrently.
-		struct
-		{
-			//Buffer on the GPU containing all instance data for a frame.
-			VmaAllocation m_InstanceBufferAllocation;
-			VkBuffer m_InstanceDataBuffer;
-			size_t m_InstanceBufferSize;
-
-			//The upload command buffer and pool. The semaphore signals when uploading is finished.
-			VkCommandPool m_UploadCommandPool;
-			VkCommandBuffer m_UploadCommandBuffer;
-			VkSemaphore m_UploadSemaphore;
-
-			//A copy of the camera and all offsets and mesh data.
-			Camera m_Camera;
-			std::vector<GpuDrawCallData> m_GpuDrawCallDatas;
-
-		} m_InstanceData;
 	};
 
 	//The queue used for uploading instance data.
 	const QueueInfo* m_UploadQueue;
 
-	//Descriptor pool and set.
-	VkDescriptorPool m_DescriptorPool;
-	VkDescriptorSetLayout m_DescriptorSetLayout;
+	//Descriptor pool and set for the deferred processing.
+	VkDescriptorPool m_ProcessingDescriptorPool;
+	VkDescriptorSetLayout m_ProcessingDescriptorSetLayout;
+
+	//Descriptor pool and set layout for the instance data.
+	VkDescriptorPool m_InstanceDescriptorPool;
+	VkDescriptorSetLayout m_InstanceDescriptorSetLayout;
 
 	//Separate buffers for each frame.
 	std::vector<DeferredFrame> m_Frames;
+
+	//Since the swapchain is deferred, swapCount + 1 instance buffers are needed to ensure
+	uint32_t m_CurrentInstanceIndex;
+	std::vector<InstanceData> m_InstanceDatas;
 };

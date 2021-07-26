@@ -1,4 +1,6 @@
 #version 450
+#extension GL_KHR_vulkan_glsl: enable
+#extension GL_EXT_nonuniform_qualifier: enable
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
@@ -19,13 +21,27 @@ layout( push_constant ) uniform PushData {
   vec4 data4;
 } pushData;
 
+struct InstanceData
+{
+    mat4 transform;  
+};
+
+layout(std430, binding = 0, set = 0) buffer InstanceDataBuffer
+{
+  InstanceData instances[];
+
+} instanceData;
+
 void main() 
 {
-    outPosition = inPosition + vec3(0.0, 0.0, -10.0);        //TODO transform.
-    outNormal = inNormal;   //TODO transform
-    outTangent = inTangent; //TODO transform
-    outUvs = inUvs;
+    uint offset = floatBitsToInt(pushData.data1.x) + gl_InstanceIndex;
+    mat4 transform = instanceData.instances[offset].transform;
+
+    vec4 pos = transform * vec4(inPosition, 1.0);
+    outPosition = vec3(pos);
+    outNormal = vec3(transform * vec4(inNormal, 0.0));
+    outTangent = vec3(transform * vec4(inTangent, 0.0));
     outMaterialId = 1337;    //TODO
 
-    gl_Position = pushData.viewProjectionMatrix * vec4(outPosition, 1.0);
+    gl_Position = pushData.viewProjectionMatrix * pos;
 }
