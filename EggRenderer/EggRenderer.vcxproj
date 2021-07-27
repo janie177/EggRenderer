@@ -28,26 +28,26 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v142</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v142</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
@@ -73,15 +73,19 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(SolutionDir)Build\$(Configuration)\$(Platform)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
+    <OutDir>$(SolutionDir)Build\$(Configuration)\$(Platform)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(SolutionDir)Build\$(Configuration)\$(Platform)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
+    <OutDir>$(SolutionDir)Build\$(Configuration)\$(Platform)\</OutDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -91,7 +95,7 @@
       <ConformanceMode>true</ConformanceMode>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(VULKAN_SDK)\Include;$(SolutionDir)Dependencies/Include/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include\;$(VULKAN_SDK)\Include;$(SolutionDir)Dependencies/Include/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -106,11 +110,17 @@
       </Command>
     </PreBuildEvent>
     <PostBuildEvent>
-      <Command>call "$(ProjectDir)CompileShaders.bat"</Command>
+      <Command>call "$(ProjectDir)CompileShaders.bat"
+xcopy "$(ProjectDir)include" "$(OutDir)include\"  /E /Y /I
+xcopy "$(ProjectDir)shaders\output" "$(OutDir)shaders\"  /E /Y /I</Command>
     </PostBuildEvent>
     <PostBuildEvent>
       <Message>Compiling all shaders to Spir-V</Message>
     </PostBuildEvent>
+    <Lib>
+      <AdditionalLibraryDirectories>$(VULKAN_SDK)\Lib;$(SolutionDir)Dependencies/Lib/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vulkan-1.lib;glfw3.lib</AdditionalDependencies>
+    </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -122,7 +132,7 @@
       <ConformanceMode>true</ConformanceMode>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(VULKAN_SDK)\Include;$(SolutionDir)Dependencies/Include/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include\;$(VULKAN_SDK)\Include;$(SolutionDir)Dependencies/Include/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -139,11 +149,17 @@
       </Command>
     </PreBuildEvent>
     <PostBuildEvent>
-      <Command>call "$(ProjectDir)CompileShaders.bat"</Command>
+      <Command>call "$(ProjectDir)CompileShaders.bat"
+xcopy "$(ProjectDir)include" "$(OutDir)include\"  /E /Y /I
+xcopy "$(ProjectDir)shaders\output" "$(OutDir)shaders\"  /E /Y /I</Command>
     </PostBuildEvent>
     <PostBuildEvent>
       <Message>Compiling all shaders to Spir-V</Message>
     </PostBuildEvent>
+    <Lib>
+      <AdditionalLibraryDirectories>$(VULKAN_SDK)\Lib;$(SolutionDir)Dependencies/Lib/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vulkan-1.lib;glfw3.lib</AdditionalDependencies>
+    </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -153,7 +169,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(VULKAN_SDK)\Include;$(SolutionDir)Dependencies/Include/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include\;$(VULKAN_SDK)\Include;$(SolutionDir)Dependencies/Include/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -162,17 +178,20 @@
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Message>
-      </Message>
-      <Command>
-      </Command>
+      <Message>Compiling shaders to Spir-V</Message>
+      <Command>call "$(ProjectDir)CompileShaders.bat"</Command>
     </PreBuildEvent>
     <PostBuildEvent>
-      <Command>call "$(ProjectDir)CompileShaders.bat"</Command>
+      <Command>xcopy "$(ProjectDir)include\api" "$(SolutionDir)Build\include\"  /E /Y /I
+xcopy "$(ProjectDir)shaders\output" "$(SolutionDir)Build\shaders\"  /E /Y /I</Command>
     </PostBuildEvent>
     <PostBuildEvent>
-      <Message>Compiling all shaders to Spir-V</Message>
+      <Message>Copying shaders and includes.</Message>
     </PostBuildEvent>
+    <Lib>
+      <AdditionalLibraryDirectories>$(VULKAN_SDK)\Lib;$(SolutionDir)Dependencies/Lib/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vulkan-1.lib;glfw3.lib</AdditionalDependencies>
+    </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -184,7 +203,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(VULKAN_SDK)\Include;$(SolutionDir)Dependencies/Include/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include\;$(VULKAN_SDK)\Include;$(SolutionDir)Dependencies/Include/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -195,36 +214,42 @@
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Message>
-      </Message>
-      <Command>
-      </Command>
+      <Message>Compiling shaders to Spir-V</Message>
+      <Command>call "$(ProjectDir)CompileShaders.bat"</Command>
     </PreBuildEvent>
     <PostBuildEvent>
-      <Command>call "$(ProjectDir)CompileShaders.bat"</Command>
+      <Command>xcopy "$(ProjectDir)include\api" "$(SolutionDir)Build\include\"  /E /Y /I
+xcopy "$(ProjectDir)shaders\output" "$(SolutionDir)Build\shaders\"  /E /Y /I</Command>
     </PostBuildEvent>
     <PostBuildEvent>
-      <Message>Compiling all shaders to Spir-V</Message>
+      <Message>Copying shaders and includes.</Message>
     </PostBuildEvent>
+    <Lib>
+      <AdditionalLibraryDirectories>$(VULKAN_SDK)\Lib;$(SolutionDir)Dependencies/Lib/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vulkan-1.lib;glfw3.lib</AdditionalDependencies>
+    </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="InputQueue.cpp" />
-    <ClCompile Include="Main.cpp" />
-    <ClCompile Include="Renderer.cpp" />
-    <ClCompile Include="RenderStage_Deferred.cpp" />
-    <ClCompile Include="RenderStage_HelloTriangle.cpp" />
-    <ClCompile Include="Transform.cpp" />
-    <ClCompile Include="vk_mem_alloc.cpp" />
+    <ClCompile Include="src\EggRenderer.cpp" />
+    <ClCompile Include="src\InputQueue.cpp" />
+    <ClCompile Include="src\Renderer.cpp" />
+    <ClCompile Include="src\RenderStage_Deferred.cpp" />
+    <ClCompile Include="src\RenderStage_HelloTriangle.cpp" />
+    <ClCompile Include="src\Transform.cpp" />
+    <ClCompile Include="src\vk_mem_alloc.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ConcurrentRegistry.h" />
-    <ClInclude Include="InputQueue.h" />
-    <ClInclude Include="Renderer.h" />
-    <ClInclude Include="RenderStage.h" />
-    <ClInclude Include="RenderUtility.h" />
-    <ClInclude Include="Resources.h" />
-    <ClInclude Include="Transform.h" />
-    <ClInclude Include="vk_mem_alloc.h" />
+    <ClInclude Include="include\api\Camera.h" />
+    <ClInclude Include="include\api\EggMesh.h" />
+    <ClInclude Include="include\api\EggRenderer.h" />
+    <ClInclude Include="include\ConcurrentRegistry.h" />
+    <ClInclude Include="include\api\InputQueue.h" />
+    <ClInclude Include="include\Renderer.h" />
+    <ClInclude Include="include\RenderStage.h" />
+    <ClInclude Include="include\RenderUtility.h" />
+    <ClInclude Include="include\Resources.h" />
+    <ClInclude Include="include\api\Transform.h" />
+    <ClInclude Include="include\vk_mem_alloc.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\compile.bat">
