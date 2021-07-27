@@ -633,21 +633,24 @@ namespace egg
         return meshes;
     }
 
-    std::shared_ptr<Mesh> Renderer::CreateMesh(const Shape a_Shape, const glm::mat4& a_InitialTransform)
+    std::shared_ptr<Mesh> Renderer::CreateMesh(const ShapeCreateInfo& a_ShapeCreateInfo)
     {
         std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
 
-        switch (a_Shape)
+        const float halfRadius = a_ShapeCreateInfo.m_Radius / 2.f;
+
+        switch (a_ShapeCreateInfo.m_ShapeType)
         {
         case Shape::PLANE:
         {
+               
             vertices =
             {
-                Vertex{{1.f, 0.f, 1.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {1.f, 1.f}},
-                Vertex{{-1.f, 0.f, -1.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {0.f, 0.f}},
-                Vertex{{-1.f, 0.f, 1.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {0.f, 1.f}},
-                Vertex{{1.f, 0.f, -1.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {1.f, 0.f}},
+                Vertex{{halfRadius, 0.f, halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {1.f, 1.f}},
+                Vertex{{-halfRadius, 0.f, -halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {0.f, 0.f}},
+                Vertex{{-halfRadius, 0.f, halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {0.f, 1.f}},
+                Vertex{{halfRadius, 0.f, -halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {1.f, 0.f}},
             };
             indices = { 0, 1, 2, 0, 3, 1 };
         }
@@ -655,42 +658,42 @@ namespace egg
         case Shape::CUBE:
         {
             vertices = {
-                Vertex{{-1.000000, -1.000000, -1.000000}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{1.000000, -1.000000, -1.000000}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{-1.000000, 1.000000, -1.000000}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-1.000000, 1.000000, -1.000000}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{1.000000, -1.000000, -1.000000}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{1.000000, 1.000000, -1.000000}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{1.000000, -1.000000, -1.000000}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{1.000000, -1.000000, 1.000000}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{1.000000, 1.000000, -1.000000}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{1.000000, 1.000000, -1.000000}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{1.000000, -1.000000, 1.000000}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{1.000000, 1.000000, 1.000000}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{1.000000, -1.000000, 1.000000}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{-1.000000, -1.000000, 1.000000}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{1.000000, 1.000000, 1.000000}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{1.000000, 1.000000, 1.000000}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-1.000000, -1.000000, 1.000000}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{-1.000000, 1.000000, 1.000000}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{-1.000000, -1.000000, 1.000000}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-1.000000, -1.000000, -1.000000}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-1.000000, 1.000000, 1.000000}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{-1.000000, 1.000000, 1.000000}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{-1.000000, -1.000000, -1.000000}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-1.000000, 1.000000, -1.000000}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-1.000000, 1.000000, -1.000000}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{1.000000, 1.000000, -1.000000}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{-1.000000, 1.000000, 1.000000}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-1.000000, 1.000000, 1.000000}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{1.000000, 1.000000, -1.000000}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{1.000000, 1.000000, 1.000000}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{-1.000000, -1.000000, 1.000000}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{1.000000, -1.000000, 1.000000}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-1.000000, -1.000000, -1.000000}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{-1.000000, -1.000000, -1.000000}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{1.000000, -1.000000, 1.000000}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{1.000000, -1.000000, -1.000000}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}}
+                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
+                Vertex{{halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
+                Vertex{{-halfRadius, halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
+                Vertex{{halfRadius, halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
+                Vertex{{halfRadius, -halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, -halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
+                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
+                Vertex{{halfRadius, -halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
+                Vertex{{-halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
+                Vertex{{halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
+                Vertex{{-halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
+                Vertex{{-halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
+                Vertex{{-halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
+                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, halfRadius, -halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
+                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
+                Vertex{{-halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
+                Vertex{{halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
+                Vertex{{-halfRadius, -halfRadius, halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, -halfRadius, halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
+                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
+                Vertex{{halfRadius, -halfRadius, halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}}
             };
 
             for(int i = 0; i < 36; ++i)
@@ -699,25 +702,114 @@ namespace egg
             }
         }
         break;
-        case Shape::SPHERE: //Unimplemented for now.
+        case Shape::SPHERE:
+            {
+            std::vector<glm::vec3> positions;
+            std::vector<glm::vec3> normals;
+            std::vector<glm::vec3> tangents;
+            std::vector<glm::vec2> uvs;
+
+            const float PI = acos(-1.f);
+            float x, y, z, xy;                              // vertex position
+            float nx, ny, nz, lengthInv = 1.0f / a_ShapeCreateInfo.m_Radius;    // normal
+            float s, t;                                     // texCoord
+
+            float sectorStep = 2 * PI / a_ShapeCreateInfo.m_Sphere.m_SectorCount;
+            float stackStep = PI / a_ShapeCreateInfo.m_Sphere.m_StackCount;
+            float sectorAngle, stackAngle;
+
+            for (int i = 0; i <= a_ShapeCreateInfo.m_Sphere.m_StackCount; ++i)
+            {
+                stackAngle = PI / 2 - i * stackStep;        // starting from pi/2 to -pi/2
+                xy = a_ShapeCreateInfo.m_Radius * cosf(stackAngle);             // r * cos(u)
+                z = a_ShapeCreateInfo.m_Radius * sinf(stackAngle);              // r * sin(u)
+
+                // add (sectorCount+1) vertices per stack
+                // the first and last vertices have same position and normal, but different tex coords
+                for (int j = 0; j <= a_ShapeCreateInfo.m_Sphere.m_SectorCount; ++j)
+                {
+                    sectorAngle = j * sectorStep;           // starting from 0 to 2pi
+
+                    // vertex position
+                    x = xy * cosf(sectorAngle);             // r * cos(u) * cos(v)
+                    y = xy * sinf(sectorAngle);             // r * cos(u) * sin(v)
+                    positions.push_back(glm::vec3(x, y, z));
+
+                    // normalized vertex normal
+                    nx = x * lengthInv;
+                    ny = y * lengthInv;
+                    nz = z * lengthInv;
+                    normals.push_back(glm::vec3(nx, ny, nz));
+
+                    // vertex tex coord between [0, 1]
+                    s = (float)j / a_ShapeCreateInfo.m_Sphere.m_SectorCount;
+                    t = (float)i / a_ShapeCreateInfo.m_Sphere.m_StackCount;
+                    uvs.push_back(glm::vec2(s, t));
+
+                    //TODO tangent!
+                    tangents.push_back(glm::vec3(1.f, 0.f, 0.f));
+                }
+            }
+
+            // indices
+            //  k1--k1+1
+            //  |  / |
+            //  | /  |
+            //  k2--k2+1
+            unsigned int k1, k2;
+            const int stackCount = static_cast<int>(a_ShapeCreateInfo.m_Sphere.m_StackCount);
+            const int sectorCount = static_cast<int>(a_ShapeCreateInfo.m_Sphere.m_SectorCount);
+            for (int i = 0; i < stackCount; ++i)
+            {
+                k1 = i * (sectorCount + 1);     // beginning of current stack
+                k2 = k1 + sectorCount + 1;      // beginning of next stack
+
+                for (int j = 0; j < sectorCount; ++j, ++k1, ++k2)
+                {
+                    // 2 triangles per sector excluding 1st and last stacks
+                    if (i != 0)
+                    {
+                        indices.push_back(k1 + 1);
+                        indices.push_back(k2);
+                        indices.push_back(k1);
+                        
+                    }
+
+                    if (i != (stackCount - 1))
+                    {
+                        indices.push_back(k2 + 1);
+                        indices.push_back(k2);
+                        indices.push_back(k1 + 1);
+                    }
+                }
+            }
+
+            //Fill the vertex buffer.
+            for(int i = 0; i < static_cast<int>(positions.size()); ++i)
+            {
+                vertices.push_back(Vertex{positions[i], normals[i], tangents[i], uvs[i]});
+            }
+
+            }
+            break;
         default:
         {
-            printf("Trying to create non-existent shape mesh: %u!\n", static_cast<uint32_t>(a_Shape));
+            printf("Trying to create non-implemented shape mesh of type: %u!\n", static_cast<uint32_t>(a_ShapeCreateInfo.m_ShapeType));
             return nullptr;
         }
         break;
         }
 
         //If the provided transform is not the identity, transform all positions, normals and tangents.
-        if (a_InitialTransform != glm::identity<glm::mat4>())
+        if (a_ShapeCreateInfo.m_InitialTransform != glm::identity<glm::mat4>())
         {
-            glm::mat4 normalMatrix = glm::transpose(glm::inverse(a_InitialTransform));
+            glm::mat4 normalMatrix = glm::transpose(glm::inverse(a_ShapeCreateInfo.m_InitialTransform));
 
             for(auto& vertex : vertices)
             {
                 vertex.normal = glm::normalize(glm::vec3(normalMatrix * glm::vec4(vertex.normal, 0.f)));
                 vertex.tangent = glm::normalize(glm::vec3(normalMatrix * glm::vec4(vertex.tangent, 0.f)));
-                vertex.position = a_InitialTransform * glm::vec4(vertex.position, 1.f);
+                vertex.position = a_ShapeCreateInfo.m_InitialTransform * glm::vec4(vertex.position, 1.f);
             }
         }
 

@@ -19,6 +19,32 @@ namespace egg
 	};
 
 	/*
+	 * Information used when creating shapes.
+	 */
+	struct ShapeCreateInfo
+	{
+		//The type of shape to create.
+		Shape m_ShapeType = Shape::CUBE;
+
+		//The radius of the shape.
+		float m_Radius = 1.f;
+
+		//Sphere specific settings.
+		struct
+		{
+			//How many splits vertically on the sphere surface.
+			uint32_t m_StackCount = 10.f;
+
+			//How many splits horizontally on the sphere surface.
+			uint32_t m_SectorCount = 10.f;
+		} m_Sphere;
+
+		//The transform applied directly to the vertices of the shape.
+		glm::mat4 m_InitialTransform = glm::identity<glm::mat4>();
+		
+	};
+
+	/*
 	 * Base resource class.
 	 */
 	class Resource

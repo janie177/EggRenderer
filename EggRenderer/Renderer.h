@@ -205,7 +205,7 @@ namespace egg
 		 * Note: Unevenly scaling a mesh (x, y, z scale are not equal) will warp normals.
 		 * To e.g. turn a cube into a rectangle, the initial transform can be used to not affect the normals this way.
 		 */
-		std::shared_ptr<Mesh> CreateMesh(const Shape a_Shape, const glm::mat4& a_InitialTransform = glm::identity<glm::mat4>());
+		std::shared_ptr<Mesh> CreateMesh(const ShapeCreateInfo& a_ShapeCreateInfo);
 
 	private:
 		template<typename T>

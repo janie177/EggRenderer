@@ -11,7 +11,7 @@ int main()
 
     RendererSettings settings;
     settings.debugFlags = DebugPrintFlags::ERROR | DebugPrintFlags::WARNING;
-    settings.vSync = false;
+    settings.vSync = true;
     settings.clearColor = glm::vec4(0.f, 0.5f, 0.9f, 1.f);
     settings.lockCursor = true;
     settings.m_SwapBufferCount = 3;
@@ -23,8 +23,13 @@ int main()
     if (renderer->Init(settings))  //This is a bit flag, can do DebugPrintFlags::ERROR | DebugPrintFlags::WARNING etc.
     {
         Transform meshTransform;
-        meshTransform.Scale({2.f, 1.f, 0.5f});
-        auto mesh = renderer->CreateMesh(Shape::CUBE, meshTransform.GetTransformation());
+        //meshTransform.Scale({2.f, 1.f, 0.5f});
+        ShapeCreateInfo shapeInfo;
+        shapeInfo.m_Sphere.m_SectorCount = 20;
+        shapeInfo.m_Sphere.m_StackCount = 20;
+        shapeInfo.m_ShapeType = Shape::SPHERE;
+        shapeInfo.m_InitialTransform = meshTransform.GetTransformation();
+        auto mesh = renderer->CreateMesh(shapeInfo);
 
         constexpr auto NUM_CUBE_INSTANCES = 50000;
 
