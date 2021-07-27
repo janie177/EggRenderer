@@ -647,10 +647,10 @@ namespace egg
                
             vertices =
             {
-                Vertex{{halfRadius, 0.f, halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {1.f, 1.f}},
-                Vertex{{-halfRadius, 0.f, -halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {0.f, 0.f}},
-                Vertex{{-halfRadius, 0.f, halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {0.f, 1.f}},
-                Vertex{{halfRadius, 0.f, -halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f}, {1.f, 0.f}},
+                Vertex{{halfRadius, 0.f, halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f, 1.f}, {1.f, 1.f}},
+                Vertex{{-halfRadius, 0.f, -halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f, 1.f}, {0.f, 0.f}},
+                Vertex{{-halfRadius, 0.f, halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f, 1.f}, {0.f, 1.f}},
+                Vertex{{halfRadius, 0.f, -halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f, 1.f}, {1.f, 0.f}},
             };
             indices = { 0, 1, 2, 0, 3, 1 };
         }
@@ -658,42 +658,42 @@ namespace egg
         case Shape::CUBE:
         {
             vertices = {
-                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{-halfRadius, halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{halfRadius, halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{halfRadius, -halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, -halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{halfRadius, -halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{-halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{-halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{-halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{-halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, halfRadius, -halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{-halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{-halfRadius, -halfRadius, halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, -halfRadius, halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 0.000000}},
-                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000}},
-                Vertex{{halfRadius, -halfRadius, halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000}, {0.000000, 1.000000}}
+                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{-halfRadius, halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{halfRadius, halfRadius, -halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{halfRadius, -halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, -halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{halfRadius, -halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{-halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{-halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{-halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{-halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, halfRadius, -halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{-halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{-halfRadius, -halfRadius, halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, -halfRadius, halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{halfRadius, -halfRadius, halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}}
             };
 
             for(int i = 0; i < 36; ++i)
@@ -706,7 +706,7 @@ namespace egg
             {
             std::vector<glm::vec3> positions;
             std::vector<glm::vec3> normals;
-            std::vector<glm::vec3> tangents;
+            std::vector<glm::vec4> tangents;
             std::vector<glm::vec2> uvs;
 
             const float PI = acos(-1.f);
@@ -747,7 +747,7 @@ namespace egg
                     uvs.push_back(glm::vec2(s, t));
 
                     //TODO tangent!
-                    tangents.push_back(glm::vec3(1.f, 0.f, 0.f));
+                    tangents.push_back(glm::vec4(1.f, 0.f, 0.f, 1.f));
                 }
             }
 
@@ -808,7 +808,7 @@ namespace egg
             for(auto& vertex : vertices)
             {
                 vertex.normal = glm::normalize(glm::vec3(normalMatrix * glm::vec4(vertex.normal, 0.f)));
-                vertex.tangent = glm::normalize(glm::vec3(normalMatrix * glm::vec4(vertex.tangent, 0.f)));
+                vertex.tangent = glm::vec4(glm::normalize(glm::vec3(normalMatrix * glm::vec4(glm::vec3(vertex.tangent), 0.f))), 1.f);
                 vertex.position = a_ShapeCreateInfo.m_InitialTransform * glm::vec4(vertex.position, 1.f);
             }
         }

@@ -27,6 +27,14 @@ namespace egg
 	};
 
 	/*
+	 * Push data used during shading.
+	 */
+	struct DeferredProcessingPushConstants
+	{
+		glm::vec4 m_CameraPosition;
+	};
+
+	/*
 	 * The basic render stage class that is derived from.
 	 */
 	class RenderStage
@@ -132,7 +140,7 @@ namespace egg
 		 * Pipeline objects for the deferred rendering stage.
 		 */
 		PipelineData m_DeferredPipelineData;			//Used to write to the array images (pos, normal, tangent, uv) and to the depth buffer.
-		PipelineData m_DeferredProcessedPipelineData;	//Reads the array images and depth buffer, then outputs to the swapchain.
+		PipelineData m_DeferredProcessingPipelineData;	//Reads the array images and depth buffer, then outputs to the swapchain.
 		VkRenderPass m_DeferredRenderPass;				//Multiple sub-passes that use the above pipelines.
 
 		/*

@@ -403,8 +403,9 @@ namespace egg
             pipelineInfo.depth.m_WriteDepth = false;
             pipelineInfo.descriptors.m_Layouts.push_back(m_ProcessingDescriptorSetLayout);
             pipelineInfo.attachments.m_NumAttachments = DEFERRED_ATTACHMENT_MAX_ENUM + 1;
+            pipelineInfo.pushConstants.m_PushConstantRanges.push_back({ VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(DeferredProcessingPushConstants) });
 
-            if (!RenderUtility::CreatePipeline(pipelineInfo, a_RenderData.m_Device, a_RenderData.m_Settings.shadersPath, m_DeferredProcessedPipelineData))
+            if (!RenderUtility::CreatePipeline(pipelineInfo, a_RenderData.m_Device, a_RenderData.m_Settings.shadersPath, m_DeferredProcessingPipelineData))
             {
                 return false;
             }
@@ -422,8 +423,8 @@ namespace egg
             pipelineInfo.vertexData.m_VertexBindings.push_back({ 0, sizeof(Vertex), VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX });
             pipelineInfo.vertexData.m_VertexAttributes.push_back({ 0, 0, VkFormat::VK_FORMAT_R32G32B32_SFLOAT, 0 });
             pipelineInfo.vertexData.m_VertexAttributes.push_back({ 1, 0, VkFormat::VK_FORMAT_R32G32B32_SFLOAT, 12 });
-            pipelineInfo.vertexData.m_VertexAttributes.push_back({ 2, 0, VkFormat::VK_FORMAT_R32G32B32_SFLOAT, 24 });
-            pipelineInfo.vertexData.m_VertexAttributes.push_back({ 3, 0, VkFormat::VK_FORMAT_R32G32_SFLOAT, 36 });
+            pipelineInfo.vertexData.m_VertexAttributes.push_back({ 2, 0, VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT, 24 });
+            pipelineInfo.vertexData.m_VertexAttributes.push_back({ 3, 0, VkFormat::VK_FORMAT_R32G32_SFLOAT, 40 });
             pipelineInfo.pushConstants.m_PushConstantRanges.push_back({ VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(DeferredPushConstants) });
             pipelineInfo.renderPass.m_RenderPass = m_DeferredRenderPass;
             pipelineInfo.attachments.m_NumAttachments = DEFERRED_ATTACHMENT_MAX_ENUM - 1;
@@ -525,15 +526,15 @@ namespace egg
 
         vkDestroyPipeline(a_RenderData.m_Device, m_DeferredPipelineData.m_Pipeline, nullptr);
         vkDestroyPipelineLayout(a_RenderData.m_Device, m_DeferredPipelineData.m_PipelineLayout, nullptr);
-        vkDestroyPipeline(a_RenderData.m_Device, m_DeferredProcessedPipelineData.m_Pipeline, nullptr);
-        vkDestroyPipelineLayout(a_RenderData.m_Device, m_DeferredProcessedPipelineData.m_PipelineLayout, nullptr);
+        vkDestroyPipeline(a_RenderData.m_Device, m_DeferredProcessingPipelineData.m_Pipeline, nullptr);
+        vkDestroyPipelineLayout(a_RenderData.m_Device, m_DeferredProcessingPipelineData.m_PipelineLayout, nullptr);
 
         //Destroy all shaders.
         for (auto& shader : m_DeferredPipelineData.m_ShaderModules)
         {
             vkDestroyShaderModule(a_RenderData.m_Device, shader, nullptr);
         }
-        for (auto& shader : m_DeferredProcessedPipelineData.m_ShaderModules)
+        for (auto& shader : m_DeferredProcessingPipelineData.m_ShaderModules)
         {
             vkDestroyShaderModule(a_RenderData.m_Device, shader, nullptr);
         }
@@ -780,8 +781,13 @@ namespace egg
         vkCmdNextSubpass(a_CommandBuffer, VK_SUBPASS_CONTENTS_INLINE);
 
         //Process in the second stage.
-        vkCmdBindPipeline(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredProcessedPipelineData.m_Pipeline);
-        vkCmdBindDescriptorSets(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredProcessedPipelineData.m_PipelineLayout, 0, 1, &m_Frames[a_CurrentFrameIndex].m_DescriptorSet, 0, nullptr);
+        vkCmdBindPipeline(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredProcessingPipelineData.m_Pipeline);
+        vkCmdBindDescriptorSets(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredProcessingPipelineData.m_PipelineLayout, 0, 1, &m_Frames[a_CurrentFrameIndex].m_DescriptorSet, 0, nullptr);
+        DeferredProcessingPushConstants processingPushData;
+        processingPushData.m_CameraPosition = glm::vec4(previousInstanceData.m_Camera.GetTransform().GetTranslation(), 0.f);
+        vkCmdPushConstants(a_CommandBuffer, m_DeferredProcessingPipelineData.m_PipelineLayout, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT,
+            0, sizeof(DeferredProcessingPushConstants), &processingPushData);
+
         vkCmdDraw(a_CommandBuffer, 3, 1, 0, 0); //Draw a full-screen triangle.
         vkCmdEndRenderPass(a_CommandBuffer);
 
