@@ -20,9 +20,11 @@ int main()
     Camera camera;
     camera.UpdateProjection(70.f, 0.1f, 600.f, static_cast<float>(settings.resolutionX) / static_cast<float>(settings.resolutionY));
 
-    if(renderer->Init(settings))  //This is a bit flag, can do DebugPrintFlags::ERROR | DebugPrintFlags::WARNING etc.
+    if (renderer->Init(settings))  //This is a bit flag, can do DebugPrintFlags::ERROR | DebugPrintFlags::WARNING etc.
     {
-        auto mesh = renderer->CreateMesh(Shape::PLANE);
+        Transform meshTransform;
+        meshTransform.Scale({2.f, 1.f, 0.5f});
+        auto mesh = renderer->CreateMesh(Shape::CUBE, meshTransform.GetTransformation());
 
         constexpr auto NUM_CUBE_INSTANCES = 50000;
 
@@ -76,7 +78,7 @@ int main()
                 }
                 else if(mEvent.action == MouseAction::MOVE_Y)
                 {
-                    camera.GetTransform().Rotate(Transform::GetWorldRight(), static_cast<float>(mEvent.value) / mouseDivider);
+                    camera.GetTransform().Rotate(camera.GetTransform().GetRight(), static_cast<float>(mEvent.value) / mouseDivider);
                 }
                 else if(mEvent.action == MouseAction::CLICK)
                 {
