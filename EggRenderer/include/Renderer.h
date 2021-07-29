@@ -13,6 +13,8 @@
 #include "Resources.h"
 #include "api/EggRenderer.h"
 #include "api/InputQueue.h"
+#include "MaterialManager.h"
+#include "ThreadPool.h"
 
 namespace egg
 {
@@ -61,7 +63,8 @@ namespace egg
 			m_Device(nullptr),
 			m_Surface(nullptr),
 			m_Allocator(nullptr),
-			m_Settings()
+		    m_Settings(),
+			m_ThreadPool(std::thread::hardware_concurrency())
 		{
 		}
 
@@ -87,6 +90,9 @@ namespace egg
 		QueueInfo* m_MeshUploadQueue = nullptr;
 		//The queue used for the swapchain presenting.
 		QueueInfo* m_PresentQueue = nullptr;
+
+		//Pool of threads for async tasks. Mutable because functions are not const.
+		mutable ThreadPool m_ThreadPool;
 	};
 
 	/*
@@ -112,6 +118,9 @@ namespace egg
 			CreateMeshes(const std::vector<MeshCreateInfo>& a_MeshCreateInfos) override;
 		std::shared_ptr<EggMesh> CreateMesh(const ShapeCreateInfo& a_ShapeCreateInfo) override;
 	    InputData QueryInput() override;
+        DynamicDrawCall CreateDynamicDrawCall(const std::shared_ptr<EggMesh>& a_Mesh,
+            const std::vector<MeshInstance>& a_Instances, const std::vector<std::shared_ptr<EggMaterial>>& a_Materials,
+            bool a_Transparent) override;
 
 	private:
 		template<typename T>
@@ -238,5 +247,11 @@ namespace egg
 		 * Dynamic Vulkan objects directly related to rendering.
 		 */
 		ConcurrentRegistry<Mesh> m_Meshes;		//Vector of all the meshes loaded. If ref count reaches 1, free.
+
+		/*
+		 * Material stuff.
+		 */
+		MaterialManager m_MaterialManager;
+		std::shared_ptr<EggMaterial> m_DefaultMaterial;
 	};
 }

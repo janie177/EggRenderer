@@ -158,12 +158,6 @@ namespace egg
 			DEFERRED_ATTACHMENT_MAX_ENUM
 		};
 
-		/*
-		 * Instance data that is packed and aligned correctly.
-		 * For now just a using directive aliasing the instance struct.
-		 */
-		using PackedInstanceData = MeshInstance;
-
 		struct GpuDrawCallData
 		{
 			std::shared_ptr<Mesh> m_Mesh;

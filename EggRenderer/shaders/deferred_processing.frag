@@ -5,7 +5,7 @@ layout (input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput i
 layout (input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput inPosition;
 layout (input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput inNormal;
 layout (input_attachment_index = 3, set = 0, binding = 3) uniform subpassInput inTangent;
-layout (input_attachment_index = 4, set = 0, binding = 4) uniform subpassInput inUvMeshId;
+layout (input_attachment_index = 4, set = 0, binding = 4) uniform subpassInput inUvCustomId;
 
 layout(location = 5) out vec4 outColor;         //In the framebuffer, the output is the 5th bound buffer.
 
@@ -45,10 +45,10 @@ void main()
     vec4 position = subpassLoad(inPosition).rgba;
     vec4 normalRaw = subpassLoad(inNormal).rgba;
     vec4 tangentRaw = subpassLoad(inTangent).rgba;
-    vec4 uvMeshId = subpassLoad(inUvMeshId).rgba;
+    vec4 uvCustomId = subpassLoad(inUvCustomId).rgba;
 
     //Pack together the bits to get the uint IDs.
-    uint meshId = packHalf2x16(uvMeshId.zw);
+    uint customId = packHalf2x16(uvCustomId.zw);
     uint materialId = packHalf2x16(vec2(position.w, normalRaw.w));
 
     //Normalize and calculate the bitangent.

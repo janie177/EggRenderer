@@ -10,6 +10,7 @@
 #include <set>
 #include <glm/glm/glm.hpp>
 
+#include "MaterialManager.h"
 #include "vk_mem_alloc.h"
 
 namespace egg
@@ -119,12 +120,24 @@ namespace egg
             return false;
 	    }
 
-	    //Finally acquire the first frame index to render into.
+	    //Acquire the first frame index to render into.
         if (!AcquireSwapChainIndex())
         {
             printf("Could not acquire first frame index from swap chain!");
             return false;
         }
+
+        //Initialize the material system.
+        m_MaterialManager.Init(m_RenderData);
+
+        //Create a default material to use when none are specified.
+        m_DefaultMaterial = m_MaterialManager.CreateMaterial(MaterialCreateInfo{
+            glm::vec3(1.f, 1.f, 1.f),
+            glm::vec3(0.f, 0.f, 0.f),
+            0.f,
+            1.f,
+            nullptr //TODO create default texture.
+        });
 	    
         m_Initialized = true;
 	    return true;
@@ -236,6 +249,45 @@ namespace egg
         return m_InputQueue.GetQueuedEvents();
     }
 
+    DynamicDrawCall Renderer::CreateDynamicDrawCall(const std::shared_ptr<EggMesh>& a_Mesh,
+        const std::vector<MeshInstance>& a_Instances, const std::vector<std::shared_ptr<EggMaterial>>& a_Materials,
+        bool a_Transparent)
+    {
+        DynamicDrawCall drawCall;
+
+        drawCall.m_Mesh = a_Mesh;
+        drawCall.m_Transparent = a_Transparent;
+        drawCall.m_Materials = a_Materials;
+
+        std::vector<uint32_t> matIds;
+        for (auto& material : a_Materials)
+        {
+            matIds.push_back(std::static_pointer_cast<Material>(material)->GetCurrentlyUsedGpuIndex());
+        }
+        if(matIds.empty())
+        {
+            matIds.push_back(std::static_pointer_cast<Material>(m_DefaultMaterial)->GetCurrentlyUsedGpuIndex());
+        }
+
+        drawCall.m_InstanceData.reserve(a_Instances.size());
+        for (auto& instance : a_Instances)
+        {
+            //First copy the entire transform.
+            PackedInstanceData data{ instance.m_Transform };
+
+            //Store the material ID.
+            assert(instance.m_MaterialIndex < matIds.size()&& "Invalid material index provided in mesh instance! Out of bounds.");
+            *reinterpret_cast<uint32_t*>(&(data.m_Transform[0][3])) = matIds[instance.m_MaterialIndex];
+
+            //Store custom data.
+            *reinterpret_cast<uint32_t*>(&(data.m_Transform[1][3])) = instance.m_CustomData;
+
+            drawCall.m_InstanceData.push_back(data);
+        }
+
+        return drawCall;
+    }
+
     bool Renderer::CleanUp()
     {
         if(!m_Initialized)
@@ -243,6 +295,16 @@ namespace egg
             printf("Cannot cleanup renderer that was not initialized!\n");
             return false;
         }
+
+        //Wait for any async tasks to end.
+        bool waiting = true;
+        while(waiting)
+        {
+            waiting = m_RenderData.m_ThreadPool.numBusyThreads() != 0;
+        }
+
+        //Clean up the material system.
+        m_MaterialManager.CleanUp(m_RenderData);
 
 	    //Wait for the pipeline to finish.
 	    for(auto& frame : m_RenderData.m_FrameData)
@@ -316,23 +378,71 @@ namespace egg
     bool Renderer::DrawFrame(const DrawData& a_DrawData)
     {
         //Ensure that the renderer has been properly set-up.
-        if(!m_Initialized)
+        if (!m_Initialized)
         {
             printf("Renderer not initialized!\n");
             return false;
         }
+
+        /*
+         * Clean up old resources once in a while.
+         */
+        if (m_FrameCounter % m_RenderData.m_Settings.cleanUpInterval == 0)
+        {
+            m_Meshes.RemoveUnused(
+                [&](Mesh& a_Mesh) -> bool
+                {
+                    //If the resource has not been used in the last full swap-chain cylce, it's not in flight.
+                    if (m_FrameCounter - a_Mesh.m_LastUsedFrameId > m_RenderData.m_Settings.m_SwapBufferCount + 1)
+                    {
+                        vmaDestroyBuffer(m_RenderData.m_Allocator, a_Mesh.GetBuffer(), a_Mesh.GetAllocation());
+                        return true;
+                    }
+                    return false;
+                }
+            );
+
+            //Clean up old materials.
+            m_MaterialManager.RemoveUnused(m_FrameCounter, m_RenderData.m_Settings.m_SwapBufferCount + 1);
+        }
+
+        //Nothing to draw :(
+        if (a_DrawData.m_DynamicDrawCalls.empty())
+        {
+            return true;
+        }
+
+        /*
+         * Update resources to have the current frame as their last used index.
+         * This will prevent them from being de-allocated while in-flight.
+         */
+        for (auto& drawCall : a_DrawData.m_DynamicDrawCalls)
+        {
+            std::static_pointer_cast<Mesh>(drawCall.m_Mesh)->m_LastUsedFrameId = m_FrameCounter;
+
+            for(auto& material : drawCall.m_Materials)
+            {
+                std::static_pointer_cast<Material>(material)->m_LastUsedFrameId = m_FrameCounter;
+            }
+        }
+
+        /*
+         * Any materials marked as dirty that are ready will be re-uploaded.
+         * If this upload does not finish before the drawing, the old material data is automatically used instead.
+         *
+         * This runs on another thread to prevent stalls.
+         */
+        m_RenderData.m_ThreadPool.enqueue([&]()
+            {
+                m_MaterialManager.UploadData();
+            });
+        
 
         //Only draw when the window is not minimized.
         const bool minimized = glfwGetWindowAttrib(m_Window, GLFW_ICONIFIED);
         if(minimized)
         {
             return true;
-        }
-
-        if(a_DrawData.m_Camera == nullptr || a_DrawData.m_pDrawCalls == nullptr)
-        {
-            printf("A valid camera and draw call pointer has to be specified for DrawData!\n");
-            return false;
         }
 
         //The frame data for the current frame.
@@ -361,14 +471,6 @@ namespace egg
         std::vector<VkSemaphore> waitSemaphores;
         std::vector<VkSemaphore> signalSemaphores;
         std::vector<VkPipelineStageFlags> waitStageFlags;       //The stages the wait semaphores should wait before.
-
-        /*
-         * Update last usage for all bound resources.
-         */
-        for(uint32_t i = 0; i < a_DrawData.m_NumDrawCalls; ++i)
-        {
-            std::static_pointer_cast<Mesh>(a_DrawData.m_pDrawCalls[i].m_Mesh)->m_LastUsedFrameId = m_FrameCounter;
-        }
 
         /*
          * Setup data for each stage depending on what has been provided this frame.
@@ -443,24 +545,6 @@ namespace egg
             printf("Could not present swapchain!\n");
             return false;
         }
-
-        //Every time a full swap chain has been consumed, remove unused resources.
-	    if(m_FrameCounter % m_RenderData.m_Settings.m_SwapBufferCount == 0)
-	    {
-            m_Meshes.RemoveUnused(
-                [&](Mesh& a_Mesh) -> bool
-	            {
-            	    //If the resource has not been used in the last full swap-chain cylce, it's not in flight.
-            	    if(m_CurrentFrameIndex - a_Mesh.m_LastUsedFrameId > m_RenderData.m_Settings.m_SwapBufferCount)
-            	    {
-                        vmaDestroyBuffer(m_RenderData.m_Allocator, a_Mesh.GetBuffer(), a_Mesh.GetAllocation());
-                        return true;
-            	    }
-                    return false;
-	            }
-            );
-	    }
-
 
         /*
          * Retrieve the next available frame index.

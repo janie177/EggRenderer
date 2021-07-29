@@ -230,25 +230,34 @@ xcopy "$(ProjectDir)shaders\output" "$(SolutionDir)Build\shaders\"  /E /Y /I</Co
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\DrawData.cpp" />
     <ClCompile Include="src\EggRenderer.cpp" />
     <ClCompile Include="src\InputQueue.cpp" />
+    <ClCompile Include="src\Material.cpp" />
+    <ClCompile Include="src\MaterialManager.cpp" />
     <ClCompile Include="src\Renderer.cpp" />
     <ClCompile Include="src\RenderStage_Deferred.cpp" />
     <ClCompile Include="src\RenderStage_HelloTriangle.cpp" />
+    <ClCompile Include="src\Timer.cpp" />
     <ClCompile Include="src\Transform.cpp" />
     <ClCompile Include="src\vk_mem_alloc.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\api\Camera.h" />
+    <ClInclude Include="include\api\DrawData.h" />
+    <ClInclude Include="include\api\EggMaterial.h" />
     <ClInclude Include="include\api\EggMesh.h" />
     <ClInclude Include="include\api\EggRenderer.h" />
+    <ClInclude Include="include\api\Timer.h" />
     <ClInclude Include="include\ConcurrentRegistry.h" />
     <ClInclude Include="include\api\InputQueue.h" />
+    <ClInclude Include="include\MaterialManager.h" />
     <ClInclude Include="include\Renderer.h" />
     <ClInclude Include="include\RenderStage.h" />
     <ClInclude Include="include\RenderUtility.h" />
     <ClInclude Include="include\Resources.h" />
     <ClInclude Include="include\api\Transform.h" />
+    <ClInclude Include="include\ThreadPool.h" />
     <ClInclude Include="include\vk_mem_alloc.h" />
   </ItemGroup>
   <ItemGroup>

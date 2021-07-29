@@ -5,38 +5,15 @@
 #include <string>
 
 #include "Camera.h"
+#include "EggMaterial.h"
 #include "EggMesh.h"
 #include "InputQueue.h"
+#include "DrawData.h"
 
 namespace egg
 {
     class EggRenderer;
     struct MeshInstance;
-    /*
-     * A single draw call.
-     */
-	struct DrawCall
-	{
-		/*
-		 * The mesh to draw.
-		 */
-		std::shared_ptr<EggMesh> m_Mesh;
-
-		/*
-		 * A pointer to an array of mesh instances to draw.
-		 */
-		MeshInstance* m_pMeshInstances = nullptr;
-
-		/*
-		 * The amount of mesh instances in the m_pMeshInstances array.
-		 */
-		uint32_t m_NumInstances = 0;
-
-		/*
-		 * If true, this geometry is drawn in a separate forward pass after the deferred stage ends.
-		 */
-		bool m_Transparent = false;
-	};
 
 	/*
      * The vertex format for meshes.
@@ -55,28 +32,6 @@ namespace egg
 		const uint32_t* m_IndexBuffer = nullptr;
 		uint32_t m_NumIndices = 0;
 		uint32_t m_NumVertices = 0;
-	};
-
-	/*
-     * All information needed to draw a single frame with the renderer.
-     * All data is copied when this is passed to the DrawFrame function of Renderer.
-     */
-	struct DrawData
-	{
-		/*
-		 * A pointer to the camera to use.
-		 */
-		Camera* m_Camera = nullptr;
-
-		/*
-		 * Pointer to an array of draw calls.
-		 */
-		DrawCall* m_pDrawCalls = nullptr;
-
-		/*
-		 * The amount of draw calls in the m_pDrawCalls array.
-		 */
-		size_t m_NumDrawCalls = 0;
 	};
 
 	/*
@@ -149,6 +104,12 @@ namespace egg
 
 		//The path where all spir-v shaders are stored.
 		std::string shadersPath = "/shaders/";
+
+		//How many materials to allow to exist. Allocates all memory up-front.
+		uint32_t maxNumMaterials = 1000000;
+
+		//How often to clean up unused resources in frames.
+		uint32_t cleanUpInterval = 120;
 	};
 
 	/*
@@ -199,6 +160,20 @@ namespace egg
 		 * Draw the next frame.
 		 */
 		virtual bool DrawFrame(const DrawData& a_DrawData) = 0;
+
+		/*
+		 * Create a dynamic draw-call from the meshes.
+		 * The mesh and all instances to be included should be provided.
+		 * The mesh instances contain indices into the a_Materials vector.
+		 *
+		 * Compiling a draw call stores all data in a compact format.
+		 * Changes to materials or transforms will require a recompilation.
+		 */
+		virtual DynamicDrawCall CreateDynamicDrawCall(
+			const std::shared_ptr<EggMesh>& a_Mesh,
+			const std::vector<MeshInstance>& a_Instances,
+			const std::vector<std::shared_ptr<EggMaterial>>& a_Materials,
+			bool a_Transparent = false) = 0;
 
 		/*
 		 * Resize the the rendering output.

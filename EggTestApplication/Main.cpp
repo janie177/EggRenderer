@@ -4,6 +4,7 @@
 
 #include "EggRenderer.h"
 #include "InputQueue.h"
+#include "Timer.h"
 
 
 /*
@@ -35,15 +36,10 @@ int main()
         shapeInfo.m_ShapeType = Shape::SPHERE;
         shapeInfo.m_InitialTransform = meshTransform.GetTransformation();
 
+        //Mesh and instances.
         auto mesh = renderer->CreateMesh(shapeInfo);
-
         constexpr auto NUM_CUBE_INSTANCES = 50000;
-
-    	//Drawing information.
-        DrawData drawData;
-        DrawCall drawCall;
         std::vector<MeshInstance> meshInstances(NUM_CUBE_INSTANCES);
-
         Transform t;
         for(int i = 0; i < NUM_CUBE_INSTANCES; ++i)
         {
@@ -53,23 +49,24 @@ int main()
             meshInstances[i].m_Transform = t.GetTransformation();
         }
 
-        drawCall.m_Mesh = mesh;
-        drawCall.m_NumInstances = NUM_CUBE_INSTANCES;
-        drawCall.m_Transparent = false;
-        drawCall.m_pMeshInstances = meshInstances.data();
-        drawData.m_NumDrawCalls = 1;
-        drawData.m_pDrawCalls = &drawCall;
-        drawData.m_Camera = &camera;
+        //Draw information and draw calls.
+        DrawData drawData;
+        auto drawCall = renderer->CreateDynamicDrawCall(mesh, meshInstances, {}, false);
+        drawData.SetCamera(camera).AddDrawCall(drawCall);
+
+        //Time FPS etc.
+        Timer timer;
 
         //Main loop
         static int frameIndex = 0;
         bool run = true;
         while(run)
         {
-            if (frameIndex % 100 == 0) printf("Frame #%i.\n", frameIndex);
+            timer.Reset();
             ++frameIndex;
 
             //Draw
+            drawData.SetCamera(camera); //Update camera.
             run = renderer->DrawFrame(drawData);
 
             //Update input
@@ -131,6 +128,12 @@ int main()
                         camera.UpdateProjection(70.f, 0.1f, 1000.f, resolution.x / resolution.y);
                     }
                 }
+            }
+
+            if (frameIndex % 100 == 0)
+            {
+                printf("Frame time: %f ms.\n", timer.Measure(TimeUnit::MILLIS));
+                printf("Frame #%i.\n", frameIndex);
             }
         }
     }

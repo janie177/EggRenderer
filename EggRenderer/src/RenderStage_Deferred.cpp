@@ -6,6 +6,7 @@
 #include "Renderer.h"
 #include "RenderStage.h"
 #include "RenderUtility.h"
+#include "api/Timer.h"
 
 namespace egg
 {
@@ -579,11 +580,15 @@ namespace egg
 
         //Offset into the uploaded data (and will also be equal to the total size after the loop).
         uint32_t offset = 0;
-        for (int drawCallIndex = 0; drawCallIndex < m_DrawData->m_NumDrawCalls; ++drawCallIndex)
+        for (auto& drawCall : m_DrawData->m_DynamicDrawCalls)
         {
-            auto& drawCall = m_DrawData->m_pDrawCalls[drawCallIndex];
-            currentInstanceData.m_GpuDrawCallDatas.emplace_back(GpuDrawCallData{ std::static_pointer_cast<Mesh>(drawCall.m_Mesh), offset, drawCall.m_NumInstances });
-            offset += drawCall.m_NumInstances;
+            currentInstanceData.m_GpuDrawCallDatas.emplace_back(GpuDrawCallData{
+                std::static_pointer_cast<Mesh>(drawCall.m_Mesh),
+                offset,
+                static_cast<uint32_t>(drawCall.m_InstanceData.size())
+            });
+
+            offset += static_cast<uint32_t>(drawCall.m_InstanceData.size());
         }
 
         //If the buffer is too small, allocate 50% extra.
@@ -652,21 +657,21 @@ namespace egg
         }
 
         //Copy the per frame data over.
-        currentInstanceData.m_Camera = *m_DrawData->m_Camera;
+        currentInstanceData.m_Camera = m_DrawData->m_Camera;
 
         //Stage the instance data and transfer it to the fast GPU memory.
         if (offset != 0)
         {
             //First map the memory and then place the instance data there. NOTE: device memory is shared for multiple allocations!!! Use the offset too.
             void* data;
-            vkMapMemory(a_RenderData.m_Device, currentInstanceData.m_StagingBufferInfo.deviceMemory, currentInstanceData.m_StagingBufferInfo.offset, currentInstanceData.m_StagingBufferInfo.size, 0, &data);
+            vkMapMemory(a_RenderData.m_Device, currentInstanceData.m_StagingBufferInfo.deviceMemory, currentInstanceData.m_StagingBufferInfo.offset,
+                currentInstanceData.m_StagingBufferInfo.size, 0, &data);
             size_t byteOffset = 0;
-            for (int i = 0; i < m_DrawData->m_NumDrawCalls; ++i)
+            for (auto& drawCall : m_DrawData->m_DynamicDrawCalls)
             {
-                auto& drawCall = m_DrawData->m_pDrawCalls[i];
-                size_t size = drawCall.m_NumInstances * sizeof(PackedInstanceData);
+                size_t size = drawCall.m_InstanceData.size() * sizeof(PackedInstanceData);
                 void* start = static_cast<unsigned char*>(data) + byteOffset;
-                memcpy(start, drawCall.m_pMeshInstances, size);
+                memcpy(start, drawCall.m_InstanceData.data(), size);
                 byteOffset += size;
             }
             vkUnmapMemory(a_RenderData.m_Device, currentInstanceData.m_StagingBufferInfo.deviceMemory);
@@ -680,7 +685,6 @@ namespace egg
             if (vkBeginCommandBuffer(currentInstanceData.m_UploadCommandBuffer, &beginInfo) != VK_SUCCESS)
             {
                 printf("Could not begin recording copy command buffer in deferred stage!\n");
-                return false;
             }
 
             //Specify which data to copy where.
