@@ -9,6 +9,7 @@ namespace egg
 {
     class Renderer;
     struct RenderData;
+    struct QueueInfo;
 
     /*
      * Book-keeping information.
@@ -94,9 +95,25 @@ namespace egg
         //Materials that are marked as dirty.
         std::mutex m_DirtyMaterialMutex;
         std::vector<std::shared_ptr<Material>> m_DirtyMaterials;
+        std::vector<std::pair<std::shared_ptr<MaterialMemoryData>, PackedMaterialData>> m_ToUploadData;
 
         //The last time materials were uploaded.
         std::mutex m_LastUpdateFrameMutex;
         uint32_t m_LastUpdateFrameIndex;
+
+        /*
+         * Vulkan objects.
+         */
+        VkBuffer m_MaterialBuffer;
+        VmaAllocation m_MaterialBufferAllocation;
+        VkBuffer m_MaterialStagingBuffer;
+        VmaAllocation m_MaterialStagingBufferAllocation;
+        VkFence m_MaterialUploadFence;
+        VkCommandPool m_UploadCommandPool;
+        VkCommandBuffer m_UploadCommandBuffer;
+        QueueInfo* m_UploadQueue;
+        VkDescriptorSetLayout m_DescriptorSetLayout;
+        VkDescriptorPool m_DescriptorPool;
+        VkDescriptorSet m_DescriptorSet;
     };
 }

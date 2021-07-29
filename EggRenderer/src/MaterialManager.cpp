@@ -15,7 +15,9 @@ namespace egg
         m_IndexCounter = 0;
         m_LastUpdateFrameIndex = 0;
 
+
         //TODO init all stuff.
+
 
 
         //Set state to initialized. This happens before creating the default allocation because it requires this flag.
@@ -24,8 +26,17 @@ namespace egg
         //Allocate the default memory (will be index 0).
         m_DefaultAllocation = AllocateMaterialMemory();
 
-        //TODO upload default allocation.
+        //Upload the default allocation.
+        PackedMaterialData defaultData{};
+        defaultData.m_AlbedoFactor.m_Data = std::numeric_limits<uint32_t>::max();
+        defaultData.m_EmissiveFactor.m_Data = 0.f;
+        defaultData.m_MetallicFactor = 0;
+        defaultData.m_RoughnessFactor = std::numeric_limits<uint16_t>::max();
+        defaultData.m_TexturesIndex = 0;
+        m_ToUploadData.push_back(std::make_pair(m_DefaultAllocation, defaultData));
 
+        //This stalls the thread till done.
+        UploadData(0);
 
         return true;
     }
@@ -34,7 +45,6 @@ namespace egg
     {
         //Only one upload can happen at a time.
         std::lock_guard<std::mutex> lock(m_UploadOperationMutex);
-        std::vector<std::pair<std::shared_ptr<MaterialMemoryData>, PackedMaterialData>> toUploadData;
         {
             //Swap the vectors while the mutex is locked.
             //Keep locked because m_DirtyMaterials is accessed below to add back some materials potentially.
@@ -48,7 +58,7 @@ namespace egg
                 //If the current material does not have pending uploads, queue it for uploading.
                 if (dirtyMaterial->m_CurrentAllocation->m_Uploaded)
                 {
-                    toUploadData.emplace_back(std::make_pair(dirtyMaterial->m_CurrentAllocation, dirtyMaterial->PackMaterialData()));
+                    m_ToUploadData.emplace_back(std::make_pair(dirtyMaterial->m_CurrentAllocation, dirtyMaterial->PackMaterialData()));
                 }
                 //The material is already waiting for an upload. If it's dirty, add it back for the next iteration.
                 else if(dirtyMaterial->IsDirty())
@@ -58,7 +68,7 @@ namespace egg
             }
         }
 
-        if(!toUploadData.empty())
+        if(!m_ToUploadData.empty())
         {
 
 
@@ -164,8 +174,13 @@ namespace egg
         std::queue<uint32_t>().swap(m_FreedIndices);    //Cleans the queue.
         m_DirtyMaterials.clear();
 
-        //TODO clean up other things.
-
+        //Free all the vulkan objects.
+        vmaDestroyBuffer(a_RenderData.m_Allocator, m_MaterialBuffer, m_MaterialBufferAllocation);
+        vmaDestroyBuffer(a_RenderData.m_Allocator, m_MaterialStagingBuffer, m_MaterialStagingBufferAllocation);
+        vkDestroyFence(a_RenderData.m_Device, m_MaterialUploadFence, nullptr);
+        vkDestroyCommandPool(a_RenderData.m_Device, m_UploadCommandPool, nullptr);
+        vkDestroyDescriptorPool(a_RenderData.m_Device, m_DescriptorPool, nullptr);
+        vkDestroyDescriptorSetLayout(a_RenderData.m_Device, m_DescriptorSetLayout, nullptr);
 
         m_Initialized = false;
     }
