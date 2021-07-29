@@ -12,6 +12,7 @@
 
 #include "MaterialManager.h"
 #include "vk_mem_alloc.h"
+#include "api/Timer.h"
 
 namespace egg
 {
@@ -257,19 +258,30 @@ namespace egg
 
         drawCall.m_Mesh = a_Mesh;
         drawCall.m_Transparent = a_Transparent;
-        drawCall.m_Materials = a_Materials;
+
+        for(auto & material : a_Materials)
+        {
+            drawCall.m_MaterialData.push_back({ material, m_FrameCounter });
+        }
 
         std::vector<uint32_t> matIds;
         for (auto& material : a_Materials)
         {
-            matIds.push_back(std::static_pointer_cast<Material>(material)->GetCurrentlyUsedGpuIndex());
+            uint32_t id, used;
+            std::static_pointer_cast<Material>(material)->GetCurrentlyUsedGpuIndex(id, used);
+            matIds.push_back(id);
         }
+
+        //If no materials were specified, use the default material.
         if(matIds.empty())
         {
-            matIds.push_back(std::static_pointer_cast<Material>(m_DefaultMaterial)->GetCurrentlyUsedGpuIndex());
+            uint32_t id, used;
+            std::static_pointer_cast<Material>(m_DefaultMaterial)->GetCurrentlyUsedGpuIndex(id, used);
+            matIds.push_back(id);
         }
 
         drawCall.m_InstanceData.reserve(a_Instances.size());
+        drawCall.m_MaterialIndices.reserve(a_Instances.size());
         for (auto& instance : a_Instances)
         {
             //First copy the entire transform.
@@ -283,8 +295,8 @@ namespace egg
             *reinterpret_cast<uint32_t*>(&(data.m_Transform[1][3])) = instance.m_CustomData;
 
             drawCall.m_InstanceData.push_back(data);
+            drawCall.m_MaterialIndices.push_back(instance.m_MaterialIndex);
         }
-
         return drawCall;
     }
 
@@ -375,8 +387,8 @@ namespace egg
     {
     }
 
-    bool Renderer::DrawFrame(const DrawData& a_DrawData)
-    {
+    bool Renderer::DrawFrame(DrawData& a_DrawData)
+    {                        
         //Ensure that the renderer has been properly set-up.
         if (!m_Initialized)
         {
@@ -415,16 +427,21 @@ namespace egg
         /*
          * Update resources to have the current frame as their last used index.
          * This will prevent them from being de-allocated while in-flight.
+         *
+         * Also update texture IDs.
          */
+        Timer timer;
+
+        //Index when stuff was last uploaded.
+        //This is mutex protected so it will never cause materials to get "stuck".
+        const auto lastUpdatedFrame = m_MaterialManager.GetLastUpdatedFrame();
+
         for (auto& drawCall : a_DrawData.m_DynamicDrawCalls)
         {
-            std::static_pointer_cast<Mesh>(drawCall.m_Mesh)->m_LastUsedFrameId = m_FrameCounter;
-
-            for(auto& material : drawCall.m_Materials)
-            {
-                std::static_pointer_cast<Material>(material)->m_LastUsedFrameId = m_FrameCounter;
-            }
+            //Update last use with the frame counter, and pass which frame materials last changed.
+            drawCall.Update(lastUpdatedFrame, m_FrameCounter);
         }
+        printf("Time to update draw calls: %f ms.\n", timer.Measure(TimeUnit::MILLIS));
 
         /*
          * Any materials marked as dirty that are ready will be re-uploaded.
@@ -434,7 +451,7 @@ namespace egg
          */
         m_RenderData.m_ThreadPool.enqueue([&]()
             {
-                m_MaterialManager.UploadData();
+                m_MaterialManager.UploadData(m_FrameCounter);
             });
         
 

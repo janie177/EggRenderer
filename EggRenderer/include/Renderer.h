@@ -106,7 +106,7 @@ namespace egg
 	//Ovverriden from th EggRenderer API.
 	public:
 		bool Init(const RendererSettings& a_Settings) override;
-		bool DrawFrame(const DrawData& a_DrawData) override;
+		bool DrawFrame(DrawData& a_DrawData) override;
 		bool Resize(bool a_FullScreen, std::uint32_t a_Width, std::uint32_t a_Height) override;
 		bool IsFullScreen() const override;
 		bool CleanUp() override;

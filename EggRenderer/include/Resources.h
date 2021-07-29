@@ -20,6 +20,7 @@ namespace egg
 	class Resource
 	{
 		friend class Renderer;
+		friend class DynamicDrawCall;
 	public:
 		virtual ~Resource() = default;
 		Resource() : m_LastUsedFrameId(0) {}
@@ -129,7 +130,7 @@ namespace egg
 		/*
 		 * Get the index in the GPU material buffer that currently contains valid material data for this material.
 		 */
-		uint32_t GetCurrentlyUsedGpuIndex() const;
+		void GetCurrentlyUsedGpuIndex(uint32_t& a_Index, uint32_t& a_LastUpdatedFrame) const;
 
 		/*
 		 * Returns true if a value has been changed, and a re-upload is necessary.

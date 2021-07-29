@@ -25,10 +25,26 @@ namespace egg
 	struct DynamicDrawCall
 	{
 		friend class Renderer;
+		friend class RenderStage_Deferred;
 	private:
 		DynamicDrawCall() = default;
 
-	public:
+		/*
+		 * Update the draw call.
+		 * Called by the renderer.
+		 *
+		 * The last frame that materials changed, and the current frame are required.
+		 */
+		void Update(uint32_t a_LastMaterialUploadFrame, uint32_t a_CurrentFrameIndex);
+
+	private:
+		struct MaterialData
+		{
+			std::shared_ptr<EggMaterial> m_Material;
+			uint32_t m_LastUpdatedFrameId;
+		};
+
+	private:
 		/*
 		 * The mesh to draw.
 		 */
@@ -40,9 +56,15 @@ namespace egg
 		std::vector<PackedInstanceData> m_InstanceData;
 
 		/*
+		 * The indices of the materials per instance data.
+		 * Used to dynamically update if materials have changed.
+		 */
+		std::vector<uint32_t> m_MaterialIndices;
+
+		/*
 		 * The materials used by this draw call.
 		 */
-		std::vector<std::shared_ptr<EggMaterial>> m_Materials;
+		std::vector<MaterialData> m_MaterialData;
 
 		/*
 		 * If true, this geometry is drawn in a separate forward pass after the deferred stage ends.
@@ -75,7 +97,7 @@ namespace egg
 		 */
 		void Reset();
 
-	public:
+	private:
 
 		/*
 		 * A pointer to the camera to use.

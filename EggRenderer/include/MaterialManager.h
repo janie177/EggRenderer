@@ -21,13 +21,14 @@ namespace egg
     private:
         uint32_t m_Index;           //The index into the buffer where this material data is stored.
         uint32_t m_LastUsedFrame;   //The frame when this material was last used.
+        uint32_t m_UpdatedFrame;    //The frame when this material allocation was uploaded.
         bool m_Uploaded;            //Bool set to true once data has finished uploading.
     };
 
     class MaterialManager
     {
     public:
-        MaterialManager() : m_IndexCounter(0), m_MaxMaterials(0), m_Initialized(false) {}
+        MaterialManager() : m_IndexCounter(0), m_MaxMaterials(0), m_Initialized(false), m_LastUpdateFrameIndex(0) {}
 
         /*
          * Set up internal systems and allocate memory.
@@ -39,7 +40,7 @@ namespace egg
          * Process all queued for upload data.
          * This will stall the thread it is called from untill all data is on the GPU.
          */
-        void UploadData();
+        void UploadData(const uint32_t a_FrameIndex);
 
         /*
          * Create a new material.
@@ -56,6 +57,11 @@ namespace egg
          * Get the default fallback allocation that is always valid.
          */
         std::shared_ptr<MaterialMemoryData> GetDefaultAllocation() const;
+
+        /*
+         * Get the frame index when materials were last updated.
+         */
+        uint32_t GetLastUpdatedFrame();
 
         /*
          * Remove materials that are no longer referenced anywhere.
@@ -87,6 +93,10 @@ namespace egg
 
         //Materials that are marked as dirty.
         std::mutex m_DirtyMaterialMutex;
-        std::vector<std::shared_ptr<Material>> m_DirtyMaterials;    
+        std::vector<std::shared_ptr<Material>> m_DirtyMaterials;
+
+        //The last time materials were uploaded.
+        std::mutex m_LastUpdateFrameMutex;
+        uint32_t m_LastUpdateFrameIndex;
     };
 }

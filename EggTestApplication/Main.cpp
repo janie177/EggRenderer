@@ -16,7 +16,7 @@ int main()
 
     RendererSettings settings;
     settings.debugFlags = DebugPrintFlags::ERROR | DebugPrintFlags::WARNING;
-    settings.vSync = true;
+    settings.vSync = false;
     settings.clearColor = glm::vec4(0.f, 0.5f, 0.9f, 1.f);
     settings.lockCursor = true;
     settings.m_SwapBufferCount = 3;

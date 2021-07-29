@@ -13,6 +13,7 @@ namespace egg
         }
         m_MaxMaterials = a_RenderData.m_Settings.maxNumMaterials;
         m_IndexCounter = 0;
+        m_LastUpdateFrameIndex = 0;
 
         //TODO init all stuff.
 
@@ -29,11 +30,11 @@ namespace egg
         return true;
     }
 
-    void MaterialManager::UploadData()
+    void MaterialManager::UploadData(const uint32_t a_FrameIndex)
     {
         //Only one upload can happen at a time.
         std::lock_guard<std::mutex> lock(m_UploadOperationMutex);
-
+        std::vector<std::pair<std::shared_ptr<MaterialMemoryData>, PackedMaterialData>> toUploadData;
         {
             //Swap the vectors while the mutex is locked.
             //Keep locked because m_DirtyMaterials is accessed below to add back some materials potentially.
@@ -42,7 +43,6 @@ namespace egg
             dirtyMaterialVector.swap(m_DirtyMaterials);
            
             //Mark all the dirty materials for upload.
-            std::vector<std::pair<std::shared_ptr<MaterialMemoryData>, PackedMaterialData>> toUploadData;
             for (auto& dirtyMaterial : dirtyMaterialVector)
             {
                 //If the current material does not have pending uploads, queue it for uploading.
@@ -58,10 +58,19 @@ namespace egg
             }
         }
 
+        if(!toUploadData.empty())
+        {
 
-        //TODO upload all data in the copy.
-        //TODO then set the bool uploaded to true when done. Wait for fence etc.
 
+            //TODO upload all data in the copy.
+            //TODO then set the bool uploaded to true when done. Wait for fence etc.
+            //TODO set the frame update uint to the current frame counter.
+        }
+
+        //When everything is done set the frame index.
+        //This can be used to see if a material is outdated.
+        std::lock_guard<std::mutex> frameCountLock(m_LastUpdateFrameMutex);
+        m_LastUpdateFrameIndex = a_FrameIndex;
     }
 
     std::shared_ptr<Material> MaterialManager::CreateMaterial(const MaterialCreateInfo& a_CreateInfo)
@@ -103,6 +112,7 @@ namespace egg
         ptr->m_Index = index;
         ptr->m_LastUsedFrame = 0;
         ptr->m_Uploaded = false;
+        ptr->m_UpdatedFrame = 0;
         m_Data.Add(ptr);
         return ptr;
     }
@@ -110,6 +120,12 @@ namespace egg
     std::shared_ptr<MaterialMemoryData> MaterialManager::GetDefaultAllocation() const
     {
         return m_DefaultAllocation;
+    }
+
+    uint32_t MaterialManager::GetLastUpdatedFrame()
+    {
+        std::lock_guard<std::mutex> lock(m_LastUpdateFrameMutex);
+        return m_LastUpdateFrameIndex;
     }
 
     void MaterialManager::RemoveUnused(const uint32_t a_CurrentFrameIndex, const uint32_t a_SwapChainCount)

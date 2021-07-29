@@ -159,7 +159,7 @@ namespace egg
 		/*
 		 * Draw the next frame.
 		 */
-		virtual bool DrawFrame(const DrawData& a_DrawData) = 0;
+		virtual bool DrawFrame(DrawData& a_DrawData) = 0;
 
 		/*
 		 * Create a dynamic draw-call from the meshes.

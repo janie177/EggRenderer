@@ -109,13 +109,16 @@ namespace egg
         return data;
     }
 
-    uint32_t Material::GetCurrentlyUsedGpuIndex() const
+    void Material::GetCurrentlyUsedGpuIndex(uint32_t& a_Index, uint32_t& a_LastUpdatedFrame) const
     {
         if(m_CurrentAllocation->m_Uploaded)
         {
-            return m_CurrentAllocation->m_Index;
+            a_Index = m_CurrentAllocation->m_Index;
+            a_LastUpdatedFrame = m_CurrentAllocation->m_UpdatedFrame;
+            return;
         }
-        return m_PreviousAllocation->m_Index;
+        a_Index =  m_PreviousAllocation->m_Index;
+        a_LastUpdatedFrame = m_PreviousAllocation->m_UpdatedFrame;
     }
 
     bool Material::IsDirty() const
