@@ -32,7 +32,7 @@ namespace egg
         }
 
         bufferInfo.usage = VkBufferUsageFlagBits::VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-        allocateInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+        allocateInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
 
         if (vmaCreateBufferWithAlignment(a_RenderData.m_Allocator, &bufferInfo, &allocateInfo,
             16, &m_MaterialStagingBuffer, &m_MaterialStagingBufferAllocation, nullptr) != VK_SUCCESS)
@@ -82,6 +82,7 @@ namespace egg
         descriptorSetLayoutBinding.binding = 0;
         descriptorSetLayoutBinding.descriptorCount = 1;
         descriptorSetLayoutBinding.descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorSetLayoutBinding.stageFlags = VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT;
 
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo{};
         descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -139,44 +140,127 @@ namespace egg
         m_ToUploadData.push_back(std::make_pair(m_DefaultAllocation, defaultData));
 
         //This stalls the thread till done.
-        UploadData(0);
+        UploadData(a_RenderData, 0);
+
+        //Create a descriptor for the buffer.
+        VkDescriptorBufferInfo bufferWriteInfo{};
+        bufferWriteInfo.offset = 0;
+        bufferWriteInfo.range = VK_WHOLE_SIZE;
+        bufferWriteInfo.buffer = m_MaterialBuffer;
+
+        VkWriteDescriptorSet writeDescriptoSet{};
+        writeDescriptoSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptoSet.descriptorCount = 1;
+        writeDescriptoSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writeDescriptoSet.dstArrayElement = 0;
+        writeDescriptoSet.dstBinding = 0;
+        writeDescriptoSet.dstSet = m_DescriptorSet;
+        writeDescriptoSet.pBufferInfo = &bufferWriteInfo;
+
+        vkUpdateDescriptorSets(a_RenderData.m_Device, 1, &writeDescriptoSet, 0, nullptr);
 
         return true;
     }
 
-    void MaterialManager::UploadData(const uint32_t a_FrameIndex)
+    void MaterialManager::PrepareForUpload()
     {
-        //Only one upload can happen at a time.
+        //Since Upload() also uses the same data, ensure that it's not running from before or something like that.
         std::lock_guard<std::mutex> lock(m_UploadOperationMutex);
+
         {
             //Swap the vectors while the mutex is locked.
             //Keep locked because m_DirtyMaterials is accessed below to add back some materials potentially.
-            std::lock_guard<std::mutex> lock(m_DirtyMaterialMutex);
+            std::lock_guard<std::mutex> lock2(m_DirtyMaterialMutex);
             std::vector<std::shared_ptr<Material>> dirtyMaterialVector;
             dirtyMaterialVector.swap(m_DirtyMaterials);
-           
+
             //Mark all the dirty materials for upload.
             for (auto& dirtyMaterial : dirtyMaterialVector)
             {
                 //If the current material does not have pending uploads, queue it for uploading.
                 if (dirtyMaterial->m_CurrentAllocation->m_Uploaded)
                 {
+                    //Ensure that the material is not edited while uploading.
+                    std::lock_guard lock3(dirtyMaterial->m_DirtyFlagMutex);
                     m_ToUploadData.emplace_back(std::make_pair(dirtyMaterial->m_CurrentAllocation, dirtyMaterial->PackMaterialData()));
+                    dirtyMaterial->m_DirtyFlag = false; //Reset the flag after copying the latest data.
                 }
                 //The material is already waiting for an upload. If it's dirty, add it back for the next iteration.
-                else if(dirtyMaterial->IsDirty())
+                else
                 {
                     m_DirtyMaterials.push_back(dirtyMaterial);
                 }
             }
         }
+    }
+
+    void MaterialManager::UploadData(const RenderData& a_RenderData, const uint32_t a_FrameIndex)
+    {
+        //Only one upload can happen at a time.
+        std::lock_guard<std::mutex> lock(m_UploadOperationMutex);
 
         //Only do something if there's actually stuff to upload.
         if(!m_ToUploadData.empty())
         {
-            //TODO upload all data in the copy.
-            //TODO then set the bool uploaded to true when done. Wait for fence etc.
-            //TODO set the frame update uint to the current frame counter.
+
+            //Map the memory and copy into the staging buffer.
+            std::vector<VkBufferCopy> copies;
+            void* data;
+            vkMapMemory(a_RenderData.m_Device, m_MaterialStagingBufferAllocationInfo.deviceMemory, m_MaterialStagingBufferAllocationInfo.offset, VK_WHOLE_SIZE, 0, &data);
+            int index = 0;
+            for(auto& entry : m_ToUploadData)
+            {
+                auto bufferOffset = static_cast<uintptr_t>(sizeof(PackedMaterialData) * index);
+                PackedMaterialData * start = reinterpret_cast<PackedMaterialData*>(reinterpret_cast<uintptr_t>(data) + bufferOffset);
+                memcpy(start, &entry.second, sizeof(PackedMaterialData));
+                copies.emplace_back(VkBufferCopy{bufferOffset, entry.first->m_Index * sizeof(PackedMaterialData),sizeof(PackedMaterialData)});
+                ++index;
+            }
+            vkUnmapMemory(a_RenderData.m_Device, m_MaterialStagingBufferAllocationInfo.deviceMemory);
+
+            //First reset the command pool. This automatically resets all associated buffers as well (if flag was not individual)
+            vkResetCommandPool(a_RenderData.m_Device, m_UploadCommandPool, 0);
+
+            VkCommandBufferBeginInfo beginInfo;
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            beginInfo.pInheritanceInfo = nullptr;
+            beginInfo.pNext = nullptr;
+
+            if (vkBeginCommandBuffer(m_UploadCommandBuffer, &beginInfo) != VK_SUCCESS)
+            {
+                printf("ERROR: Could not begin recording copy command buffer for material upload!\n");
+                return;
+            }
+
+            //Specify which data to copy where.
+            vkCmdCopyBuffer(m_UploadCommandBuffer, m_MaterialStagingBuffer, m_MaterialBuffer, copies.size(), copies.data());
+
+            //Stop recording.
+            vkEndCommandBuffer(m_UploadCommandBuffer);
+
+            VkSubmitInfo submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &m_UploadCommandBuffer;
+            submitInfo.pNext = nullptr;
+            submitInfo.pSignalSemaphores = nullptr;
+            submitInfo.pWaitDstStageMask = nullptr;
+            submitInfo.pWaitSemaphores = nullptr;
+            submitInfo.waitSemaphoreCount = 0;
+            submitInfo.signalSemaphoreCount = 0;
+
+            //Submit the work and then wait for the fence to be signaled.
+            vkResetFences(a_RenderData.m_Device, 1, &m_MaterialUploadFence);
+            vkQueueSubmit(m_UploadQueue->m_Queue, 1, &submitInfo, m_MaterialUploadFence);
+            vkWaitForFences(a_RenderData.m_Device, 1, &m_MaterialUploadFence, true, std::numeric_limits<uint64_t>::max());
+
+            //Update the to-upload data to now be set to uploaded.
+            //This will allow new data to be uploaded.
+            for(auto& entry : m_ToUploadData)
+            {
+                entry.first->m_Uploaded = true;
+            }
 
             //When everything is done set the frame index.
             //This can be used to see if a material is outdated.
@@ -186,6 +270,11 @@ namespace egg
             //Clear the vector when done.
             m_ToUploadData.clear();
         }
+    }
+
+    void MaterialManager::WaitForIdle(const RenderData& a_RenderData) const
+    {
+        vkWaitForFences(a_RenderData.m_Device, 1, &m_MaterialUploadFence, true, std::numeric_limits<uint64_t>::max());
     }
 
     std::shared_ptr<Material> MaterialManager::CreateMaterial(const MaterialCreateInfo& a_CreateInfo)
@@ -288,5 +377,17 @@ namespace egg
         vkDestroyDescriptorSetLayout(a_RenderData.m_Device, m_DescriptorSetLayout, nullptr);
 
         m_Initialized = false;
+    }
+
+    VkDescriptorSetLayout MaterialManager::GetSetLayout() const
+    {
+        assert(m_Initialized);
+        return m_DescriptorSetLayout;
+    }
+
+    VkDescriptorSet MaterialManager::GetDescriptorSet() const
+    {
+        assert(m_Initialized);
+        return m_DescriptorSet;
     }
 }

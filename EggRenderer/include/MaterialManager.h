@@ -38,10 +38,21 @@ namespace egg
         bool Init(const RenderData& a_RenderData);
 
         /*
+         * Prepare for uploading dirty materials.
+         * This also sets materials marked as dirty back to their normal state.
+         */
+        void PrepareForUpload();
+
+        /*
          * Process all queued for upload data.
          * This will stall the thread it is called from untill all data is on the GPU.
          */
-        void UploadData(const uint32_t a_FrameIndex);
+        void UploadData(const RenderData& a_RenderData, const uint32_t a_FrameIndex);
+
+        /*
+         * Wait for any in flight operations to end.
+         */
+        void WaitForIdle(const RenderData& a_RenderData) const;
 
         /*
          * Create a new material.
@@ -78,6 +89,16 @@ namespace egg
          * Destroy all allocated memory.
          */
         void CleanUp(const RenderData& a_RenderData);
+
+        /*
+         * Get the descriptor set layout.
+         */
+        VkDescriptorSetLayout GetSetLayout() const;
+
+        /*
+         * Get the material buffer descriptor set.
+         */
+        VkDescriptorSet GetDescriptorSet() const;
 
     private:
         ConcurrentRegistry<MaterialMemoryData> m_Data;  //Contains all the taken indices so far.

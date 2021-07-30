@@ -7,7 +7,7 @@ namespace egg
     {
         m_Manager = &a_Manager;
         m_PreviousAllocation = a_Manager.GetDefaultAllocation();
-        m_CurrentAllocation = a_Manager.AllocateMaterialMemory();
+        m_CurrentAllocation = a_Manager.GetDefaultAllocation();
         m_MetallicFactor = a_Info.m_MetallicFactor;
         m_RoughnessFactor = a_Info.m_RoughnessFactor;
         m_EmissiveFactor = a_Info.m_EmissiveFactor;
@@ -22,6 +22,7 @@ namespace egg
 
     void Material::SetAlbedoFactor(const glm::vec3& a_Factor)
     {
+        std::lock_guard lock(m_DirtyFlagMutex);
         if(m_AlbedoFactor != a_Factor)
         {
             m_AlbedoFactor = a_Factor;
@@ -36,6 +37,7 @@ namespace egg
 
     void Material::SetEmissiveFactor(const glm::vec3& a_Factor)
     {
+        std::lock_guard lock(m_DirtyFlagMutex);
         if (m_EmissiveFactor != a_Factor)
         {
             m_EmissiveFactor = a_Factor;
@@ -50,6 +52,7 @@ namespace egg
 
     void Material::SetMetallicFactor(const float a_Factor)
     {
+        std::lock_guard lock(m_DirtyFlagMutex);
         if (m_MetallicFactor != a_Factor)
         {
             m_MetallicFactor = a_Factor;
@@ -64,6 +67,7 @@ namespace egg
 
     void Material::SetRoughnessFactor(const float a_Factor)
     {
+        std::lock_guard lock(m_DirtyFlagMutex);
         if (m_RoughnessFactor != a_Factor)
         {
             m_RoughnessFactor = a_Factor;
@@ -78,6 +82,7 @@ namespace egg
 
     void Material::SetMaterialTextures(const std::shared_ptr<EggMaterialTextures>& a_Texture)
     {
+        std::lock_guard<std::mutex> lock(m_DirtyFlagMutex);
         if (m_Textures != a_Texture)
         {
             m_Textures = a_Texture;
@@ -89,22 +94,17 @@ namespace egg
     {
         PackedMaterialData data;
 
-        //TODO extract the texture index
-        data.m_TexturesIndex = 69;
+        //Pack metallic roughness into X.
+        data.m_Data.x = glm::packUnorm2x16(glm::vec2(m_MetallicFactor, m_RoughnessFactor));
 
-        constexpr uint32_t byteMax = std::numeric_limits<uint8_t>::max();
-        constexpr uint32_t shortMax = std::numeric_limits<uint16_t>::max();
+        //TODO: pack the texture ID into Y.
+        data.m_Data.y = 69;
 
-        data.m_AlbedoFactor.m_X = m_AlbedoFactor.x * byteMax;
-        data.m_AlbedoFactor.m_Y = m_AlbedoFactor.y * byteMax;
-        data.m_AlbedoFactor.m_Z = m_AlbedoFactor.z * byteMax;
+        //Albedo Z channel.
+        data.m_Data.z = glm::packUnorm4x8(glm::vec4(m_AlbedoFactor, 0.f));
 
-        data.m_EmissiveFactor.m_X = m_EmissiveFactor.x * byteMax;
-        data.m_EmissiveFactor.m_Y = m_EmissiveFactor.y * byteMax;
-        data.m_EmissiveFactor.m_Z = m_EmissiveFactor.z * byteMax;
-
-        data.m_RoughnessFactor = m_RoughnessFactor * shortMax;
-        data.m_MetallicFactor = m_MetallicFactor * shortMax;
+        //Emissive W channel.
+        data.m_Data.w = glm::packUnorm4x8(glm::vec4(m_EmissiveFactor, 0.f));
 
         return data;
     }
@@ -123,6 +123,7 @@ namespace egg
 
     bool Material::IsDirty() const
     {
+        std::lock_guard<std::mutex> lock(m_DirtyFlagMutex);
         return m_DirtyFlag;
     }
 

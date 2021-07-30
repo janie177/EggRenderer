@@ -176,6 +176,11 @@ namespace egg
 			bool a_Transparent = false) = 0;
 
 		/*
+		 * Create a new material with the given properties.
+		 */
+		virtual std::shared_ptr<EggMaterial> CreateMaterial(const MaterialCreateInfo& a_Info) = 0;
+
+		/*
 		 * Resize the the rendering output.
 		 */
 		virtual bool Resize(bool a_FullScreen, std::uint32_t a_Width, std::uint32_t a_Height) = 0;

@@ -7,6 +7,12 @@ layout (input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput i
 layout (input_attachment_index = 3, set = 0, binding = 3) uniform subpassInput inTangent;
 layout (input_attachment_index = 4, set = 0, binding = 4) uniform subpassInput inUvCustomId;
 
+layout (std430, binding = 0, set = 1) buffer MaterialData
+{
+    uvec4 data[];
+
+} materialBuffer;
+
 layout(location = 5) out vec4 outColor;         //In the framebuffer, the output is the 5th bound buffer.
 
 //Calculate the BRDF.
@@ -30,9 +36,6 @@ void main()
     const float lightRadius = 1.0;
     const float lightRadiusSquared = lightRadius * lightRadius;
     const float lightArea = 3.1415926536 * lightRadiusSquared;     //Area is equal to the disk projected onto the pixel hemisphere (surface of the circle with the radius of the light).
-    const float metallic = 0.8;
-    const float roughness = 0.1;
-
 
     //If no hit is present for this pixel, discard.
     float depth = subpassLoad(inDepth).r;
@@ -50,6 +53,13 @@ void main()
     //Pack together the bits to get the uint IDs.
     uint customId = packHalf2x16(uvCustomId.zw);
     uint materialId = packHalf2x16(vec2(position.w, normalRaw.w));
+
+    //Extract the packed material data.
+    uvec4 packedMaterialData = materialBuffer.data[materialId];
+    uint textureId = packedMaterialData.y;
+    vec2 metallicRoughness = unpackUnorm2x16(packedMaterialData.x);
+    vec3 albedo = vec3(unpackUnorm4x8(packedMaterialData.z));
+    vec3 emissive = vec3(unpackUnorm4x8(packedMaterialData.w));
 
     //Normalize and calculate the bitangent.
     const vec3 normal = normalize(normalRaw.xyz);
@@ -69,14 +79,11 @@ void main()
     //Only shade when the light is visible.
     if (cosI > 0.f && lDistance > 0.01)
     {
-    
         const vec3 toCameraDir = normalize(pushData.cameraPosition.xyz - position.xyz);
 
         //Geometry term G(x). Solid angle is the light area projected onto the pixel hemisphere.
         const float solidAngle = (cosO * lightArea) / (lDistance * lDistance);
-
-        vec3 surfaceColor = vec3(1.0, 1.0, 1.0);
-        const vec3 brdf = calculateBRDF(pixelToLightDir, toCameraDir, normal, metallic, roughness, surfaceColor);
+        const vec3 brdf = calculateBRDF(pixelToLightDir, toCameraDir, normal, metallicRoughness.x, metallicRoughness.y, albedo);
 
         //The final light transport value.
         //CosI converts from radiance to irradiance.

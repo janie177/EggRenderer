@@ -38,7 +38,7 @@ namespace egg
         assert(a_Settings.m_SwapBufferCount < 100);
 	    
         m_RenderData.m_Settings = a_Settings;
-        m_FrameCounter = 0;
+        m_RenderData.m_FrameCounter = 0;
         m_MeshCounter = 0;
 
 	    /*
@@ -127,22 +127,6 @@ namespace egg
             printf("Could not acquire first frame index from swap chain!");
             return false;
         }
-
-        //Initialize the material system.
-        if(!m_MaterialManager.Init(m_RenderData))
-        {
-            printf("Could not init material manager!\n");
-            return false;
-        }
-
-        //Create a default material to use when none are specified.
-        m_DefaultMaterial = m_MaterialManager.CreateMaterial(MaterialCreateInfo{
-            glm::vec3(1.f, 1.f, 1.f),
-            glm::vec3(0.f, 0.f, 0.f),
-            0.f,
-            1.f,
-            nullptr //TODO create default texture.
-        });
 	    
         m_Initialized = true;
 	    return true;
@@ -265,7 +249,7 @@ namespace egg
 
         for(auto & material : a_Materials)
         {
-            drawCall.m_MaterialData.push_back({ material, m_FrameCounter });
+            drawCall.m_MaterialData.push_back({ material, m_RenderData.m_FrameCounter });
         }
 
         std::vector<uint32_t> matIds;
@@ -280,7 +264,7 @@ namespace egg
         if(matIds.empty())
         {
             uint32_t id, used;
-            std::static_pointer_cast<Material>(m_DefaultMaterial)->GetCurrentlyUsedGpuIndex(id, used);
+            std::static_pointer_cast<Material>(m_RenderData.m_DefaultMaterial)->GetCurrentlyUsedGpuIndex(id, used);
             matIds.push_back(id);
         }
 
@@ -304,6 +288,11 @@ namespace egg
         return drawCall;
     }
 
+    std::shared_ptr<EggMaterial> Renderer::CreateMaterial(const MaterialCreateInfo& a_Info)
+    {
+        return m_RenderData.m_MaterialManager.CreateMaterial(a_Info);
+    }
+
     bool Renderer::CleanUp()
     {
         if(!m_Initialized)
@@ -319,9 +308,6 @@ namespace egg
             waiting = m_RenderData.m_ThreadPool.numBusyThreads() != 0;
         }
 
-        //Clean up the material system.
-        m_MaterialManager.CleanUp(m_RenderData);
-
 	    //Wait for the pipeline to finish.
 	    for(auto& frame : m_RenderData.m_FrameData)
 	    {
@@ -332,6 +318,12 @@ namespace egg
         {
             stage->WaitForIdle(m_RenderData);
         }
+
+        //Wait for material uploading to end.
+        m_RenderData.m_MaterialManager.WaitForIdle(m_RenderData);
+
+        //Clean up the material system.
+        m_RenderData.m_MaterialManager.CleanUp(m_RenderData);
 
 	    //Unload all meshes.
         m_Meshes.RemoveAll([&](Mesh& a_Mesh)
@@ -376,7 +368,6 @@ namespace egg
 
     Renderer::Renderer() :
 	    m_Initialized(false),
-	    m_FrameCounter(0),
 	    m_MeshCounter(0),
 	    m_Window(nullptr),
 	    m_SwapChain(nullptr),
@@ -401,13 +392,13 @@ namespace egg
         /*
          * Clean up old resources once in a while.
          */
-        if (m_FrameCounter % m_RenderData.m_Settings.cleanUpInterval == 0)
+        if (m_RenderData.m_FrameCounter % m_RenderData.m_Settings.cleanUpInterval == 0)
         {
             m_Meshes.RemoveUnused(
                 [&](Mesh& a_Mesh) -> bool
                 {
                     //If the resource has not been used in the last full swap-chain cylce, it's not in flight.
-                    if (m_FrameCounter - a_Mesh.m_LastUsedFrameId > m_RenderData.m_Settings.m_SwapBufferCount + 1)
+                    if (m_RenderData.m_FrameCounter - a_Mesh.m_LastUsedFrameId > m_RenderData.m_Settings.m_SwapBufferCount + 1)
                     {
                         vmaDestroyBuffer(m_RenderData.m_Allocator, a_Mesh.GetBuffer(), a_Mesh.GetAllocation());
                         return true;
@@ -417,7 +408,7 @@ namespace egg
             );
 
             //Clean up old materials.
-            m_MaterialManager.RemoveUnused(m_FrameCounter, m_RenderData.m_Settings.m_SwapBufferCount + 1);
+            m_RenderData.m_MaterialManager.RemoveUnused(m_RenderData.m_FrameCounter, m_RenderData.m_Settings.m_SwapBufferCount + 1);
         }
 
         //Nothing to draw :(
@@ -428,14 +419,19 @@ namespace egg
 
         //Index when stuff was last uploaded.
         //This is mutex protected so it will never cause materials to get "stuck".
-        const auto lastUpdatedFrame = m_MaterialManager.GetLastUpdatedFrame();
+        const auto lastUpdatedFrame = m_RenderData.m_MaterialManager.GetLastUpdatedFrame();
 
         //Update resources used this frame.
         for (auto& drawCall : a_DrawData.m_DynamicDrawCalls)
         {
             //Update last use with the frame counter, and pass which frame materials last changed.
-            drawCall.Update(lastUpdatedFrame, m_FrameCounter);
+            drawCall.Update(lastUpdatedFrame, m_RenderData.m_FrameCounter);
         }
+
+        /*
+         * Select materials to be re-uploaded.
+         */
+        m_RenderData.m_MaterialManager.PrepareForUpload();
 
         /*
          * Any materials marked as dirty that are ready will be re-uploaded.
@@ -443,9 +439,10 @@ namespace egg
          *
          * This runs on another thread to prevent stalls.
          */
-        m_RenderData.m_ThreadPool.enqueue([&]()
+        auto frameIndex = m_RenderData.m_FrameCounter;
+        m_RenderData.m_ThreadPool.enqueue([&, frameIndex]()
             {
-                m_MaterialManager.UploadData(m_FrameCounter);
+                m_RenderData.m_MaterialManager.UploadData(m_RenderData, frameIndex);
             });
         
 
@@ -570,7 +567,7 @@ namespace egg
         m_FrameReadySemaphore = frameData.m_WaitForFrameSemaphore;
 
 	    //Increment the frame index.
-        ++m_FrameCounter;
+        ++m_RenderData.m_FrameCounter;
 	    
 	    return true;
     }
@@ -678,7 +675,7 @@ namespace egg
              * Copy from the CPU memory to the GPU using a command buffer
              */
 
-             //First reset the command pool. This automatically resets all associated buffers as well (if flag was not individual)
+            //First reset the command pool. This automatically resets all associated buffers as well (if flag was not individual)
             vkResetCommandPool(m_RenderData.m_Device, m_CopyCommandPool, 0);
 
             VkCommandBufferBeginInfo beginInfo;
@@ -1643,6 +1640,23 @@ namespace egg
         //Assign the queues used for the main pipeline.
         m_RenderData.m_MeshUploadQueue = &(!m_RenderData.m_TransferQueues.empty() ? m_RenderData.m_TransferQueues[0] : m_RenderData.m_GraphicsQueues[m_RenderData.m_GraphicsQueues.size() - 1]);
         m_RenderData.m_PresentQueue = &m_RenderData.m_GraphicsQueues[0];
+
+        //Initialize the material system.
+        if (!m_RenderData.m_MaterialManager.Init(m_RenderData))
+        {
+            printf("Could not init material manager!\n");
+            return false;
+        }
+
+        //Create a default material to use when none are specified.
+        m_RenderData.m_DefaultMaterial = m_RenderData.m_MaterialManager.CreateMaterial(MaterialCreateInfo{
+            glm::vec3(1.f, 1.f, 1.f),
+            glm::vec3(0.f, 0.f, 0.f),
+            0.f,
+            1.f,
+            nullptr //TODO create default texture.
+            });
+
 
         /*
          * Setup the copy command buffer and pool.

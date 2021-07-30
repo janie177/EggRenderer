@@ -10,7 +10,7 @@ layout(location = 5) in flat uint inCustomId;
 layout(location = 0) out vec4 outPosition;
 layout(location = 1) out vec4 outNormal;
 layout(location = 2) out vec4 outTangent;
-layout(location = 3) out vec4 outUvsMeshId;
+layout(location = 3) out vec4 outUvsCustomId;
 
 void main() 
 {
@@ -22,6 +22,6 @@ void main()
 
     //Split material ID in half for 32 bit precision. Store in UV so that a single read can retrieve it (for pixel picking).
     vec2 customIdAsVector = unpackHalf2x16(inCustomId);
-    outUvsMeshId.xy = inUvs;   //UVs and mesh ID are combined.
-    outUvsMeshId.zw = customIdAsVector; //Interpret the uint as two floats. Use packHalf2x16 to get the uint back.
+    outUvsCustomId.xy = inUvs;   //UVs and mesh ID are combined.
+    outUvsCustomId.zw = customIdAsVector; //Interpret the uint as two floats. Use packHalf2x16 to get the uint back.
 }

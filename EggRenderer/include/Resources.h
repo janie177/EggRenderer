@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <mutex>
 #include <vector>
 #include <glm/glm/glm.hpp>
 
@@ -156,6 +157,7 @@ namespace egg
 
 		//Keep track of when to re-upload.
 		bool m_DirtyFlag;
+		mutable std::mutex m_DirtyFlagMutex;
 
 		//Current and previous allocation to be safe when not yet done uploading.
 		std::shared_ptr<MaterialMemoryData> m_CurrentAllocation;

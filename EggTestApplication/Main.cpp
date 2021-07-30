@@ -49,9 +49,16 @@ int main()
             meshInstances[i].m_Transform = t.GetTransformation();
         }
 
+        MaterialCreateInfo materialInfo;
+        materialInfo.m_MetallicFactor = 0.1f;
+        materialInfo.m_AlbedoFactor = { 1.f, 0.f, 0.f };
+        auto material = renderer->CreateMaterial(materialInfo);
+        
+
+
         //Draw information and draw calls.
         DrawData drawData;
-        auto drawCall = renderer->CreateDynamicDrawCall(mesh, meshInstances, {}, false);
+        auto drawCall = renderer->CreateDynamicDrawCall(mesh, meshInstances, {material}, false);
         drawData.SetCamera(camera).AddDrawCall(drawCall);
 
         //Time FPS etc.
@@ -64,6 +71,12 @@ int main()
         {
             timer.Reset();
             ++frameIndex;
+
+            //Randomly change material color once in a while.
+            if(frameIndex % 800 == 0)
+            {
+                material->SetAlbedoFactor({ 0.f, 1.f, 1.f });
+            }
 
             //Draw
             drawData.SetCamera(camera); //Update camera.

@@ -403,6 +403,7 @@ namespace egg
             pipelineInfo.depth.m_UseDepth = false;          //This is just shading so no need to use depth.
             pipelineInfo.depth.m_WriteDepth = false;
             pipelineInfo.descriptors.m_Layouts.push_back(m_ProcessingDescriptorSetLayout);
+            pipelineInfo.descriptors.m_Layouts.push_back(a_RenderData.m_MaterialManager.GetSetLayout());
             pipelineInfo.attachments.m_NumAttachments = DEFERRED_ATTACHMENT_MAX_ENUM + 1;
             pipelineInfo.pushConstants.m_PushConstantRanges.push_back({ VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(DeferredProcessingPushConstants) });
 
@@ -786,7 +787,11 @@ namespace egg
 
         //Process in the second stage.
         vkCmdBindPipeline(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredProcessingPipelineData.m_Pipeline);
-        vkCmdBindDescriptorSets(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredProcessingPipelineData.m_PipelineLayout, 0, 1, &m_Frames[a_CurrentFrameIndex].m_DescriptorSet, 0, nullptr);
+
+        //Bind the descriptor set that handles G-Buffer input.
+        VkDescriptorSet sets[2]{ m_Frames[a_CurrentFrameIndex].m_DescriptorSet, a_RenderData.m_MaterialManager.GetDescriptorSet()};
+        vkCmdBindDescriptorSets(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredProcessingPipelineData.m_PipelineLayout, 0, 2, sets, 0, nullptr);
+
         DeferredProcessingPushConstants processingPushData;
         processingPushData.m_CameraPosition = glm::vec4(previousInstanceData.m_Camera.GetTransform().GetTranslation(), 0.f);
         vkCmdPushConstants(a_CommandBuffer, m_DeferredProcessingPipelineData.m_PipelineLayout, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT,

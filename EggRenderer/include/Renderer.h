@@ -93,6 +93,16 @@ namespace egg
 
 		//Pool of threads for async tasks. Mutable because functions are not const.
 		mutable ThreadPool m_ThreadPool;
+
+		/*
+         * Material stuff.
+         */
+		MaterialManager m_MaterialManager;
+		std::shared_ptr<EggMaterial> m_DefaultMaterial;
+
+		//The index of the current frame. Used to track resource usage.
+		//Incremented by one after each frame.
+		uint32_t m_FrameCounter;					
 	};
 
 	/*
@@ -121,7 +131,7 @@ namespace egg
         DynamicDrawCall CreateDynamicDrawCall(const std::shared_ptr<EggMesh>& a_Mesh,
             const std::vector<MeshInstance>& a_Instances, const std::vector<std::shared_ptr<EggMaterial>>& a_Materials,
             bool a_Transparent) override;
-
+	std::shared_ptr<EggMaterial> CreateMaterial(const MaterialCreateInfo& a_Info) override;
 	private:
 		template<typename T>
 		inline T* AddRenderStage(std::unique_ptr<T>&& a_Stage)
@@ -196,13 +206,12 @@ namespace egg
 			VkDebugUtilsMessageTypeFlagsEXT messageType,
 			const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 			void* pUserData);
-
+ 
 	private:
 		/*
 		 * Global renderer tracking stuff.
 		 */
 		bool m_Initialized;
-		uint32_t m_FrameCounter;					//The index of the current frame. Used to track resource usage.
 		uint32_t m_MeshCounter;						//The mesh ID incrementing counter.
 
 		/*
@@ -247,11 +256,5 @@ namespace egg
 		 * Dynamic Vulkan objects directly related to rendering.
 		 */
 		ConcurrentRegistry<Mesh> m_Meshes;		//Vector of all the meshes loaded. If ref count reaches 1, free.
-
-		/*
-		 * Material stuff.
-		 */
-		MaterialManager m_MaterialManager;
-		std::shared_ptr<EggMaterial> m_DefaultMaterial;
 	};
 }
