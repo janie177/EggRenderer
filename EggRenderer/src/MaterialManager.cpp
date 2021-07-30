@@ -15,9 +15,112 @@ namespace egg
         m_IndexCounter = 0;
         m_LastUpdateFrameIndex = 0;
 
+        //Allocate the staging buffer and GPU memory.
+        VmaAllocationCreateInfo allocateInfo{};
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = sizeof(PackedMaterialData) * a_RenderData.m_Settings.maxNumMaterials;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        bufferInfo.usage = VkBufferUsageFlagBits::VK_BUFFER_USAGE_TRANSFER_DST_BIT | VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        allocateInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-        //TODO init all stuff.
+        if(vmaCreateBufferWithAlignment(a_RenderData.m_Allocator, &bufferInfo, &allocateInfo,
+            16, &m_MaterialBuffer, &m_MaterialBufferAllocation, nullptr) != VK_SUCCESS)
+        {
+            printf("Could not allocate memory in material manager.\n");
+            return false;
+        }
 
+        bufferInfo.usage = VkBufferUsageFlagBits::VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        allocateInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+        if (vmaCreateBufferWithAlignment(a_RenderData.m_Allocator, &bufferInfo, &allocateInfo,
+            16, &m_MaterialStagingBuffer, &m_MaterialStagingBufferAllocation, nullptr) != VK_SUCCESS)
+        {
+            printf("Could not allocate memory in material manager.\n");
+            return false;
+        }
+
+        vmaGetAllocationInfo(a_RenderData.m_Allocator, m_MaterialStagingBufferAllocation, &m_MaterialStagingBufferAllocationInfo);
+        vmaGetAllocationInfo(a_RenderData.m_Allocator, m_MaterialBufferAllocation, &m_MaterialBufferAllocationInfo);
+
+        VkFenceCreateInfo fenceCreateInfo{};
+        fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceCreateInfo.flags = VkFenceCreateFlagBits::VK_FENCE_CREATE_SIGNALED_BIT;
+        if(vkCreateFence(a_RenderData.m_Device, &fenceCreateInfo, nullptr, &m_MaterialUploadFence) != VK_SUCCESS)
+        {
+            printf("Could not create fence in material manager!\n");
+            return false;
+        }
+
+        m_UploadQueue = &((!a_RenderData.m_TransferQueues.empty()) ? a_RenderData.m_TransferQueues[0] : a_RenderData.m_GraphicsQueues[a_RenderData.m_GraphicsQueues.size() - 1]);
+
+
+        VkCommandPoolCreateInfo commandPoolCreateInfo{};
+        commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        commandPoolCreateInfo.queueFamilyIndex = m_UploadQueue->m_FamilyIndex;
+
+        if(vkCreateCommandPool(a_RenderData.m_Device, &commandPoolCreateInfo, nullptr, &m_UploadCommandPool) != VK_SUCCESS)
+        {
+            printf("Could not create command pool in material manager!\n");
+            return false;
+        }
+
+        VkCommandBufferAllocateInfo commandBufferAllocateInfo{};
+        commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        commandBufferAllocateInfo.commandBufferCount = 1;
+        commandBufferAllocateInfo.commandPool = m_UploadCommandPool;
+        commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+        if (vkAllocateCommandBuffers(a_RenderData.m_Device, &commandBufferAllocateInfo, &m_UploadCommandBuffer) != VK_SUCCESS)
+        {
+            printf("Could not create command buffer in material manager!\n");
+            return false;
+        }
+
+        VkDescriptorSetLayoutBinding descriptorSetLayoutBinding{};
+        descriptorSetLayoutBinding.binding = 0;
+        descriptorSetLayoutBinding.descriptorCount = 1;
+        descriptorSetLayoutBinding.descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo{};
+        descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        descriptorSetLayoutCreateInfo.bindingCount = 1;
+        descriptorSetLayoutCreateInfo.pBindings = &descriptorSetLayoutBinding;
+
+        if (vkCreateDescriptorSetLayout(a_RenderData.m_Device, &descriptorSetLayoutCreateInfo, nullptr, &m_DescriptorSetLayout) != VK_SUCCESS)
+        {
+            printf("Could not create descriptor set layout in material manager!\n");
+            return false;
+        }
+
+        VkDescriptorPoolSize poolSize{};
+        poolSize.descriptorCount = 1;
+        poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+
+        VkDescriptorPoolCreateInfo descriptorPoolInfo{};
+        descriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        descriptorPoolInfo.maxSets = 1;
+        descriptorPoolInfo.poolSizeCount = 1;
+        descriptorPoolInfo.pPoolSizes = &poolSize;
+
+        if (vkCreateDescriptorPool(a_RenderData.m_Device, &descriptorPoolInfo, nullptr, &m_DescriptorPool) != VK_SUCCESS)
+        {
+            printf("Could not create descriptor pool in material manager!\n");
+            return false;
+        }
+
+        VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
+        descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        descriptorSetAllocateInfo.descriptorSetCount = 1;
+        descriptorSetAllocateInfo.descriptorPool = m_DescriptorPool;
+        descriptorSetAllocateInfo.pSetLayouts = &m_DescriptorSetLayout;
+
+        if (vkAllocateDescriptorSets(a_RenderData.m_Device, &descriptorSetAllocateInfo, &m_DescriptorSet) != VK_SUCCESS)
+        {
+            printf("Could not create descriptor set in material manager!\n");
+            return false;
+        }
 
 
         //Set state to initialized. This happens before creating the default allocation because it requires this flag.
@@ -68,19 +171,21 @@ namespace egg
             }
         }
 
+        //Only do something if there's actually stuff to upload.
         if(!m_ToUploadData.empty())
         {
-
-
             //TODO upload all data in the copy.
             //TODO then set the bool uploaded to true when done. Wait for fence etc.
             //TODO set the frame update uint to the current frame counter.
-        }
 
-        //When everything is done set the frame index.
-        //This can be used to see if a material is outdated.
-        std::lock_guard<std::mutex> frameCountLock(m_LastUpdateFrameMutex);
-        m_LastUpdateFrameIndex = a_FrameIndex;
+            //When everything is done set the frame index.
+            //This can be used to see if a material is outdated.
+            std::lock_guard<std::mutex> frameCountLock(m_LastUpdateFrameMutex);
+            m_LastUpdateFrameIndex = a_FrameIndex;
+
+            //Clear the vector when done.
+            m_ToUploadData.clear();
+        }
     }
 
     std::shared_ptr<Material> MaterialManager::CreateMaterial(const MaterialCreateInfo& a_CreateInfo)

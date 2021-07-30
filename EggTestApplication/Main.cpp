@@ -16,7 +16,7 @@ int main()
 
     RendererSettings settings;
     settings.debugFlags = DebugPrintFlags::ERROR | DebugPrintFlags::WARNING;
-    settings.vSync = false;
+    settings.vSync = true;
     settings.clearColor = glm::vec4(0.f, 0.5f, 0.9f, 1.f);
     settings.lockCursor = true;
     settings.m_SwapBufferCount = 3;
@@ -130,7 +130,7 @@ int main()
                 }
             }
 
-            if (frameIndex % 100 == 0)
+            if (frameIndex % 1 == 0)
             {
                 printf("Frame time: %f ms.\n", timer.Measure(TimeUnit::MILLIS));
                 printf("Frame #%i.\n", frameIndex);

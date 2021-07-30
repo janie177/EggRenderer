@@ -106,12 +106,15 @@ namespace egg
          */
         VkBuffer m_MaterialBuffer;
         VmaAllocation m_MaterialBufferAllocation;
+        VmaAllocationInfo m_MaterialBufferAllocationInfo;
         VkBuffer m_MaterialStagingBuffer;
         VmaAllocation m_MaterialStagingBufferAllocation;
+        VmaAllocationInfo m_MaterialStagingBufferAllocationInfo;
+
         VkFence m_MaterialUploadFence;
         VkCommandPool m_UploadCommandPool;
         VkCommandBuffer m_UploadCommandBuffer;
-        QueueInfo* m_UploadQueue;
+        const QueueInfo* m_UploadQueue;
         VkDescriptorSetLayout m_DescriptorSetLayout;
         VkDescriptorPool m_DescriptorPool;
         VkDescriptorSet m_DescriptorSet;

@@ -129,7 +129,11 @@ namespace egg
         }
 
         //Initialize the material system.
-        m_MaterialManager.Init(m_RenderData);
+        if(!m_MaterialManager.Init(m_RenderData))
+        {
+            printf("Could not init material manager!\n");
+            return false;
+        }
 
         //Create a default material to use when none are specified.
         m_DefaultMaterial = m_MaterialManager.CreateMaterial(MaterialCreateInfo{
@@ -335,8 +339,6 @@ namespace egg
 		    vmaDestroyBuffer(m_RenderData.m_Allocator, a_Mesh.GetBuffer(), a_Mesh.GetAllocation());
         });
 
-        //TODO render stage and textures
-
 	    /*
 	     * Clean up the render stages.
 	     * This happens in reverse order.
@@ -424,24 +426,16 @@ namespace egg
             return true;
         }
 
-        /*
-         * Update resources to have the current frame as their last used index.
-         * This will prevent them from being de-allocated while in-flight.
-         *
-         * Also update texture IDs.
-         */
-        Timer timer;
-
         //Index when stuff was last uploaded.
         //This is mutex protected so it will never cause materials to get "stuck".
         const auto lastUpdatedFrame = m_MaterialManager.GetLastUpdatedFrame();
 
+        //Update resources used this frame.
         for (auto& drawCall : a_DrawData.m_DynamicDrawCalls)
         {
             //Update last use with the frame counter, and pass which frame materials last changed.
             drawCall.Update(lastUpdatedFrame, m_FrameCounter);
         }
-        printf("Time to update draw calls: %f ms.\n", timer.Measure(TimeUnit::MILLIS));
 
         /*
          * Any materials marked as dirty that are ready will be re-uploaded.
