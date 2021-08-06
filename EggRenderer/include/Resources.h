@@ -26,7 +26,7 @@ namespace egg
 		virtual ~Resource() = default;
 		Resource() : m_LastUsedFrameId(0) {}
 
-	private:
+	protected:
 		uint32_t m_LastUsedFrameId;		//The frame index when this resource was used.
 	};
 
@@ -112,6 +112,11 @@ namespace egg
     public:
 		Material(const MaterialCreateInfo& a_Info, MaterialManager& a_Manager);
 
+		/*
+		 * Mark this material and underlying allocations as used for a frame.
+		 */
+		void SetLastUsedFrame(const uint32_t a_FrameIndex);
+		
         glm::vec3 GetAlbedoFactor() const override;
         void SetAlbedoFactor(const glm::vec3& a_Factor) override;
         glm::vec3 GetEmissiveFactor() const override;

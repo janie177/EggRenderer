@@ -15,6 +15,14 @@ namespace egg
         m_Textures = a_Info.m_MaterialTextures;
     }
 
+    void Material::SetLastUsedFrame(const uint32_t a_FrameIndex)
+    {
+        m_LastUsedFrameId = a_FrameIndex;
+        m_CurrentAllocation->m_LastUsedFrame = a_FrameIndex;
+        m_PreviousAllocation->m_LastUsedFrame = a_FrameIndex;
+    	
+    }
+
     glm::vec3 Material::GetAlbedoFactor() const
     {
         return m_AlbedoFactor;

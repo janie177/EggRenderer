@@ -78,7 +78,6 @@ int main()
         materialInfo.m_RoughnessFactor = 1.f;
         auto planeMaterial = renderer->CreateMaterial(materialInfo);
 
-
         //Draw information and draw calls.
         DrawData drawData;
         auto planeDrawCall = renderer->CreateDynamicDrawCall(planeMesh, planeInstances, { planeMaterial });

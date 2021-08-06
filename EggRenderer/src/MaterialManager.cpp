@@ -182,6 +182,13 @@ namespace egg
                 {
                     //Ensure that the material is not edited while uploading.
                     std::lock_guard lock3(dirtyMaterial->m_DirtyFlagMutex);
+
+                	//Move the current used material index to the back, so that it is used till the upload finishes.
+                	//Allocate a new place for the updated data that is used as soon as the upload finishes.
+                    dirtyMaterial->m_PreviousAllocation = dirtyMaterial->m_CurrentAllocation;
+                    dirtyMaterial->m_CurrentAllocation = AllocateMaterialMemory();
+
+                	//Tightly pack the material data and upload it to the newly allocated memory in the material buffer.
                     m_ToUploadData.emplace_back(std::make_pair(dirtyMaterial->m_CurrentAllocation, dirtyMaterial->PackMaterialData()));
                     dirtyMaterial->m_DirtyFlag = false; //Reset the flag after copying the latest data.
                 }
@@ -259,6 +266,8 @@ namespace egg
             //This will allow new data to be uploaded.
             for(auto& entry : m_ToUploadData)
             {
+                entry.first->m_LastUsedFrame = a_FrameIndex;
+                entry.first->m_UpdatedFrame = a_FrameIndex;
                 entry.first->m_Uploaded = true;
             }
 

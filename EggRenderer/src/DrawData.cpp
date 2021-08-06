@@ -10,6 +10,12 @@ namespace egg
         //Mark the mesh as in-use in case it gets deleted while in-flight.
         std::static_pointer_cast<Mesh>(m_Mesh)->m_LastUsedFrameId = a_CurrentFrameIndex;
 
+    	//Mark the materials as used for this frame.
+    	for(auto& material : m_MaterialData)
+    	{
+            std::static_pointer_cast<Material>(material.m_Material)->SetLastUsedFrame(a_CurrentFrameIndex);
+    	}
+
         //When not using the default material, check for potential changes.
         if (!m_MaterialData.empty())
         {

@@ -290,7 +290,9 @@ namespace egg
 
     std::shared_ptr<EggMaterial> Renderer::CreateMaterial(const MaterialCreateInfo& a_Info)
     {
-        return m_RenderData.m_MaterialManager.CreateMaterial(a_Info);
+        auto material =  m_RenderData.m_MaterialManager.CreateMaterial(a_Info);
+        material->MarkAsDirty();    //No need to lock mutex since only this function has access.
+        return material;
     }
 
     bool Renderer::CleanUp()
