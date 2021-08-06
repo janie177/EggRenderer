@@ -473,9 +473,9 @@ namespace egg
             //Viewport
             VkViewport viewport{};
             viewport.x = 0.0f;
-            viewport.y = 0.0f;
-            viewport.width = (float)a_CreateInfo.resolution.m_ResolutionX;
-            viewport.height = (float)a_CreateInfo.resolution.m_ResolutionY;
+            viewport.y = static_cast<float>(a_CreateInfo.resolution.m_ResolutionY); //Note: Nomally 0, but since Y is flipped..
+            viewport.width = static_cast<float>(a_CreateInfo.resolution.m_ResolutionX);
+            viewport.height = -static_cast<float>(a_CreateInfo.resolution.m_ResolutionY); //NOTE: Vulkan has Y inverted, so negative here flips it back!
             viewport.minDepth = 0.0f;
             viewport.maxDepth = 1.0f;
             VkRect2D scissor{};

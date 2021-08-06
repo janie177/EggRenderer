@@ -28,17 +28,31 @@ int main()
 
     if (renderer->Init(settings))
     {
-        Transform meshTransform;
-        //meshTransform.Scale({2.f, 1.f, 0.5f});
-        ShapeCreateInfo shapeInfo;
-        shapeInfo.m_Sphere.m_SectorCount = 20;
-        shapeInfo.m_Sphere.m_StackCount = 20;
-        shapeInfo.m_ShapeType = Shape::SPHERE;
-        shapeInfo.m_InitialTransform = meshTransform.GetTransformation();
-
-        //Mesh and instances.
-        auto mesh = renderer->CreateMesh(shapeInfo);
-        constexpr auto NUM_CUBE_INSTANCES = 50000;
+        std::shared_ptr<EggMesh> sphereMesh;
+        std::shared_ptr<EggMesh> planeMesh;
+        {
+            //Create a sphere mesh.
+            Transform meshTransform;
+            ShapeCreateInfo shapeInfo;
+            shapeInfo.m_Sphere.m_SectorCount = 20;
+            shapeInfo.m_Sphere.m_StackCount = 20;
+            shapeInfo.m_ShapeType = Shape::SPHERE;
+            shapeInfo.m_InitialTransform = meshTransform.GetTransformation();
+            sphereMesh = renderer->CreateMesh(shapeInfo);
+        }
+        {
+            //Create a plane mesh.
+            Transform meshTransform;
+            meshTransform.Translate({ 0.f, -1.f, 0.f });
+            ShapeCreateInfo shapeInfo;
+            shapeInfo.m_Radius = 100.f;
+            shapeInfo.m_ShapeType = Shape::PLANE;
+            shapeInfo.m_InitialTransform = meshTransform.GetTransformation();
+            planeMesh = renderer->CreateMesh(shapeInfo);
+        }
+    	
+        //Sphere instances
+        constexpr auto NUM_CUBE_INSTANCES = 500;
         std::vector<MeshInstance> meshInstances(NUM_CUBE_INSTANCES);
         Transform t;
         for(int i = 0; i < NUM_CUBE_INSTANCES; ++i)
@@ -49,17 +63,29 @@ int main()
             meshInstances[i].m_Transform = t.GetTransformation();
         }
 
+    	//Plane instance (default constructed)
+        std::vector<MeshInstance> planeInstances;
+        planeInstances.resize(1);
+
+    	//Create materials.
         MaterialCreateInfo materialInfo;
-        materialInfo.m_MetallicFactor = 0.1f;
+        materialInfo.m_MetallicFactor = 0.5f;
+        materialInfo.m_RoughnessFactor = 0.3f;
         materialInfo.m_AlbedoFactor = { 1.f, 0.f, 0.f };
         auto material = renderer->CreateMaterial(materialInfo);
-        
+        materialInfo.m_AlbedoFactor = { 1.f, 1.f, 1.f };
+        materialInfo.m_MetallicFactor = 0.f;
+        materialInfo.m_RoughnessFactor = 1.f;
+        auto planeMaterial = renderer->CreateMaterial(materialInfo);
 
 
         //Draw information and draw calls.
         DrawData drawData;
-        auto drawCall = renderer->CreateDynamicDrawCall(mesh, meshInstances, {material}, false);
-        drawData.SetCamera(camera).AddDrawCall(drawCall);
+        auto planeDrawCall = renderer->CreateDynamicDrawCall(planeMesh, planeInstances, { planeMaterial });
+        auto drawCall = renderer->CreateDynamicDrawCall(sphereMesh, meshInstances, {material});
+
+    	//Build it all into a draw data object.
+        drawData.SetCamera(camera).AddDrawCall(planeDrawCall).AddDrawCall(drawCall);
 
         //Time FPS etc.
         Timer timer;
@@ -73,9 +99,12 @@ int main()
             ++frameIndex;
 
             //Randomly change material color once in a while.
-            if(frameIndex % 800 == 0)
+            if(frameIndex % 100 == 0)
             {
-                material->SetAlbedoFactor({ 0.f, 1.f, 1.f });
+                const float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+				const float g = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+				const float b = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+                material->SetAlbedoFactor({ r, g, b });
             }
 
             //Draw
@@ -99,7 +128,7 @@ int main()
                 }
                 else if(mEvent.action == MouseAction::MOVE_Y)
                 {
-                    camera.GetTransform().Rotate(camera.GetTransform().GetRight(), static_cast<float>(mEvent.value) / mouseDivider);
+                    camera.GetTransform().Rotate(camera.GetTransform().GetRight(), static_cast<float>(mEvent.value) / -mouseDivider);
                 }
                 else if(mEvent.action == MouseAction::CLICK)
                 {
@@ -119,8 +148,8 @@ int main()
             if (rightState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetRight() * movementSpeed);
             if (leftState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetLeft() * movementSpeed);
             if (backwardState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetBack() * -movementSpeed);
-            if (upState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetWorldUp() * -movementSpeed);
-            if (downState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetWorldDown() * -movementSpeed);
+            if (upState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetWorldUp() * movementSpeed);
+            if (downState != ButtonState::NOT_PRESSED) camera.GetTransform().Translate(camera.GetTransform().GetWorldDown() * movementSpeed);
 
             while(input.GetNextEvent(kEvent))
             {

@@ -31,9 +31,9 @@ void main()
 {
     //Temporary light and material values;
     const vec3 ambientLight = {0.07, 0.07, 0.07};
-    const vec3 lightPosition = {0.0, 5.0, 0.0};
-    const vec3 lightRadiance = {10.0, 10.0, 10.0};
-    const float lightRadius = 1.0;
+    const vec3 lightPosition = {0.0, 10.0, 0.0};
+    const vec3 lightRadiance = {50.0, 50.0, 50.0};
+    const float lightRadius = 2.0;
     const float lightRadiusSquared = lightRadius * lightRadius;
     const float lightArea = 3.1415926536 * lightRadiusSquared;     //Area is equal to the disk projected onto the pixel hemisphere (surface of the circle with the radius of the light).
 

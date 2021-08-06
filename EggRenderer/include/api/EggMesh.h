@@ -10,7 +10,7 @@ namespace egg
         /*
          * The transform to use for the mesh instance.
          */
-        glm::mat4 m_Transform;
+        glm::mat4 m_Transform = glm::identity<glm::mat4>();
 
         /*
          * The index into the materials array to use.
