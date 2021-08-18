@@ -117,6 +117,7 @@ namespace egg
         return data;
     }
 
+	//TODO change this maybe?
     void Material::GetCurrentlyUsedGpuIndex(uint32_t& a_Index, uint32_t& a_LastUpdatedFrame) const
     {
         if(m_CurrentAllocation->m_Uploaded)

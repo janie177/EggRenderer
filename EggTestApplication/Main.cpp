@@ -52,7 +52,7 @@ int main()
         }
     	
         //Sphere instances
-        constexpr auto NUM_CUBE_INSTANCES = 500;
+        constexpr auto NUM_CUBE_INSTANCES = 100000;
         std::vector<MeshInstance> meshInstances(NUM_CUBE_INSTANCES);
         Transform t;
         for(int i = 0; i < NUM_CUBE_INSTANCES; ++i)
@@ -80,9 +80,14 @@ int main()
 
         //Draw information and draw calls.
         DrawData drawData;
-        auto planeDrawCall = renderer->CreateDynamicDrawCall(planeMesh, planeInstances, { planeMaterial });
-        auto drawCall = renderer->CreateDynamicDrawCall(sphereMesh, meshInstances, {material});
 
+
+        auto planeDrawCall = renderer->CreateDynamicDrawCall(planeMesh, planeInstances, { planeMaterial });
+    	
+        Timer memTimer;
+        auto drawCall = renderer->CreateDynamicDrawCall(sphereMesh, meshInstances, {material});
+        printf("Time to create dynamic draw call: %f millis.\n", memTimer.Measure(TimeUnit::MILLIS));
+    	
     	//Build it all into a draw data object.
         drawData.SetCamera(camera).AddDrawCall(planeDrawCall).AddDrawCall(drawCall);
 
@@ -196,4 +201,5 @@ int main()
     }
 
     printf("Program execution finished.\nPress any key to continue.\n");
+    return 0;
 }

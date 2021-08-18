@@ -231,7 +231,9 @@ xcopy "$(ProjectDir)shaders\output" "$(SolutionDir)Build\shaders\"  /E /Y /I</Co
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\DrawData.cpp" />
+    <ClCompile Include="src\DrawDataBuilder.cpp" />
     <ClCompile Include="src\EggRenderer.cpp" />
+    <ClCompile Include="src\GpuBuffer.cpp" />
     <ClCompile Include="src\InputQueue.cpp" />
     <ClCompile Include="src\Material.cpp" />
     <ClCompile Include="src\MaterialManager.cpp" />
@@ -245,12 +247,14 @@ xcopy "$(ProjectDir)shaders\output" "$(SolutionDir)Build\shaders\"  /E /Y /I</Co
   <ItemGroup>
     <ClInclude Include="include\api\Camera.h" />
     <ClInclude Include="include\api\DrawData.h" />
+    <ClInclude Include="include\api\DrawDataBuilder.h" />
     <ClInclude Include="include\api\EggMaterial.h" />
     <ClInclude Include="include\api\EggMesh.h" />
     <ClInclude Include="include\api\EggRenderer.h" />
     <ClInclude Include="include\api\Timer.h" />
     <ClInclude Include="include\ConcurrentRegistry.h" />
     <ClInclude Include="include\api\InputQueue.h" />
+    <ClInclude Include="include\GpuBuffer.h" />
     <ClInclude Include="include\MaterialManager.h" />
     <ClInclude Include="include\Renderer.h" />
     <ClInclude Include="include\RenderStage.h" />
