@@ -6,159 +6,228 @@
 
 #include "Camera.h"
 #include "EggMaterial.h"
+#include "EggLight.h"
 #include "EggMesh.h"
 #include "DrawDataBuilder.h"
 
 namespace egg
 {
+	class DrawData;
 	struct DrawCall;
-	struct DrawData;
-
+	struct PackedLightData;
+	union PackedInstanceData;
+	union PackedMaterialData;
 	
-	//TODO actually create this type.
-	class EggLight;
+	//Opaque handle types.
+	enum class MaterialHandle : uint32_t {};
+	enum class MeshHandle : uint32_t {};
+	enum class InstanceDataHandle : uint32_t {};
+	enum class LightHandle : uint32_t {};
+	enum class DrawCallHandle : uint32_t {};
+	enum class DrawPassHandle : uint32_t {};
 	
 	/*
-     * Instance data that is packed and aligned correctly.
-     * Custom data can be stored in the last row of the matrix.
-     */
-	union PackedInstanceData
-	{
-		//Everything packed into a matrix.
-		glm::mat4 m_Matrix;
-
-		//Normally GLM matrices are column major, but I'll interpret them as row major instead.
-		struct
-		{
-			glm::vec4 m_TransformRow1;
-			glm::vec4 m_TransformRow2;
-			glm::vec4 m_TransformRow3;
-			union
-			{
-				glm::vec4 m_CustomData;
-				struct
-				{
-					float m_CustomData1;
-					float m_CustomData2;
-					float m_CustomData3;
-					float m_CustomData4;
-				};
-			};
-		};
-	};
-
-	/*
-	 * Light data ready to be uploaded to the GPU.
-	 * This struct can contain position, direction, radiance, angle, radius etc.
+	 * The type indicating in which stage of rendering a draw call should be executed.
 	 */
-	struct PackedLightData
+	enum class DrawPassType
 	{
-		glm::vec4 m_Data1;
-		glm::vec4 m_Data2;
-		glm::vec4 m_Data3;
-	};
-	
-	/*
-	 * Information about when and how a draw call should be used.
-	 * Multiple flags can be combined to have a draw call be used in multiple render stages.
-	 */
-	enum class DrawFlags
-	{
-		STATIC_DEFERRED_SHADING,	//This draw call will draw static meshes in a deferred pass.
-		STATIC_FORWARD_SHADING,		//This draw call will draw static meshes in a forward pass.
-		SHADOW_CASTER				//This draw call will affect shadow map generation (cast shadows).
+		STATIC_DEFERRED_SHADING,	//This draw pass will draw static meshes in a deferred pass.
+		STATIC_FORWARD_SHADING,		//This draw pass will draw static meshes in a forward pass.
+		SHADOW_GENERATION			//This draw pass will affect shadow map generation (cast shadows).
 	};
 
-	inline DrawFlags operator |(DrawFlags& a_Lhs, DrawFlags& a_Rhs) { return static_cast<DrawFlags>(static_cast<int>(a_Lhs) | static_cast<int>(a_Rhs)); }
-	inline DrawFlags operator &(DrawFlags& a_Lhs, DrawFlags& a_Rhs) { return static_cast<DrawFlags>(static_cast<int>(a_Lhs) & static_cast<int>(a_Rhs)); }
+	inline DrawPassType operator |(DrawPassType& a_Lhs, DrawPassType& a_Rhs) { return static_cast<DrawPassType>(static_cast<int>(a_Lhs) | static_cast<int>(a_Rhs)); }
+	inline DrawPassType operator &(DrawPassType& a_Lhs, DrawPassType& a_Rhs) { return static_cast<DrawPassType>(static_cast<int>(a_Lhs) & static_cast<int>(a_Rhs)); }
 
 	/*
 	 * A draw call represents an action to be performed by the GPU.
 	 */
 	struct DrawCall
 	{
-		DrawFlags m_DrawMask;
-		uint32_t m_InstanceOffset;
-		uint32_t m_NumInstances;
-		uint32_t m_MeshIndex;
+		uint32_t m_MeshIndex;					//Index into the mesh array in the draw data.
+		uint32_t m_IndirectionBufferOffset;		//Where in the indirection buffer the indices for this draw call start.
+		uint32_t m_NumInstances;				//How many instances to draw.
+	};
+
+	/*
+	 * A draw pass has a type which indicates how draw calls should be used.
+	 * It contains one or more draw calls.
+	 */
+	struct DrawPass
+	{
+		DrawPassType m_Type;						//The type of draw pass.
+		uint32_t m_LightHandle;					//If this is a shadow generation pass, this is the light it is generated for.
+		std::vector<uint32_t> m_DrawCalls;	//The handles to the draw calls used by this draw pass.
 	};
 	
 	/*
 	 * DrawData is provided to the Renderer.
 	 * It contains all information for a single frame to be drawn.
+	 * When passed to the renderer, all contained state is consumed.
 	 */
 	struct DrawData
 	{
 		friend class Renderer;
 		friend class RenderStage_Deferred;
+
 	public:
-		
 		/*
-		 * Set the camera to be used for this frame.
+		 * Set the camera used for this frame.
 		 */
 		void SetCamera(const Camera& a_Camera);
-		
+
+		/*
+		 * Add a directional light to the scene in this frame.
+		 * Returns a handle to the light.
+		 */
+		LightHandle AddLight(const DirectionalLight& a_Light);
+
+		/*
+		 * Add a spherical light to the scene in this frame.
+		 * Returns a handle to the light.
+		 */
+		LightHandle AddLight(const SphereLight& a_Light);
+
 		/*
 		 * Add a material to be used during this frame.
-		 * Returns the index of the material within the draw data.
-		 * This index can be passed to the AddInstance function.
+		 * Returns a handle to the material that can be specified when adding instance data.
 		 */
-		uint32_t AddMaterial(const std::shared_ptr<EggMaterial>& a_Material);
+		MaterialHandle AddMaterial(const std::shared_ptr<EggMaterial>& a_Material);
 
 		/*
 		 * Add a mesh to be used during this frame.
-		 * Returns the index of the mesh within the draw data.
-		 * This index can be passed to the AddInstance function.
+		 * Returns a handle to the mesh that can be specified when creating draw calls.
 		 */
-		uint32_t AddMesh(const std::shared_ptr<EggMesh>& a_Mesh);
+		MeshHandle AddMesh(const std::shared_ptr<EggMesh>& a_Mesh);
 
 		/*
-		 * Add a light to the scene for this frame.
-		 * The index of the light is returned.
+		 * Add an instance's data to this frame.
+		 *
+		 * a_Transform represents a mat4x4 consisting of 16 32-bit floats in column-major order.
+		 * a_MaterialHandle is the handle to a material previously added to this DrawData using AddMaterial().
+		 * a_CustomId is an identifier that can be queried for a location on the screen after drawing.
+		 *
+		 * Returns a handle that can be provided to the AddDrawCall() function.
 		 */
-		uint32_t AddLight(const std::shared_ptr<EggLight>& a_Light);
+		InstanceDataHandle AddInstance(const glm::mat4& a_Transform, const MaterialHandle a_MaterialHandle, const uint32_t a_CustomId);
 
 		/*
-		 * Add instance data to be used during this frame.
-		 * a_Transform is the world space rotation, translation and scale.
-		 * a_MaterialIndex is the index of the material to use to draw this object.
-		 * a_CustomPtr is a user defined pointer that can be queried for a position on the screen.
+		 * Add a draw call to this frame.
+		 * A draw call represents a drawing operation involving geometry and instance data.
+		 * A single draw call can be used by one or more draw passes.
+		 *
+		 * a_MeshHandle is the handle of the mesh to use for the geometry.
+		 * a_Instances is a collection of instance data handles (returned by the AddInstance() function).
+		 * a_InstanceCount is the amount of instances in the a_Instances collection.
+		 *
+		 * Returns a handle to the newly created draw call, which can be passed to the functions that add draw passes.
 		 */
-		uint32_t AddInstance(const glm::mat4& a_Transform, const uint32_t a_MaterialIndex, const void* a_CustomPtr);
+		DrawCallHandle AddDrawCall(MeshHandle a_MeshHandle, const InstanceDataHandle* a_Instances, uint32_t a_InstanceCount);
 
 		/*
-		 * Get the amount of instances currently in this draw data object.
+		 * Add a deferred shading draw pass.
+		 * All draw calls in this pass will be shaded and output to the window.
+		 * Transparency is not supported.
+		 * 
+		 * a_DrawCalls is a collection of draw calls that will be used for this pass.
+		 * a_NumDrawCalls is the amount of draw calls in the collection.
+		 *
+		 * Returns a handle to the draw pass created.
+		 */
+		DrawPassHandle AddDeferredShadingDrawPass(const DrawCallHandle* a_DrawCalls, uint32_t a_NumDrawCalls);
+
+		/*
+		 * Add a shadow map generation draw pass.
+		 * All draw calls in this pass will affect the shadows that are cast from light a_LightHandle.
+		 *
+		 * a_DrawCalls is a collection of draw calls that will be used for this pass.
+		 * a_NumDrawCalls is the amount of draw calls in the collection.
+		 * a_LightHandle is the handle of the light that shadows will be generated for.
+		 *
+		 * Returns a handle to the draw pass created.
+		 */
+		DrawPassHandle AddShadowDrawPass(const DrawCallHandle* a_DrawCalls, uint32_t a_NumDrawCalls, const LightHandle a_LightHandle);
+
+		/*
+		 * Get the amount of instances that have been added for this frame.
 		 */
 		uint32_t GetInstanceCount() const;
 
 		/*
-		 * Add instance data to be used during this frame.
-		 * a_Transform is the world space rotation, translation and scale.
-		 * a_MaterialIndex is the index of the material to use to draw this object.
-		 * a_CustomPtr is a user defined pointer that can be queried for a position on the screen.
-		 * a_AnimationFrameIndex is the frame of the animation used in case this is a skeletal animated mesh.
-		 *
-		 * The index of the instance added is returned. This can be passed to the AddDrawCall function.
+		 * Get the amount of draw passes that have been added for this frame.
 		 */
-		uint32_t AddInstance(const glm::mat4& a_Transform, const uint32_t a_MaterialIndex, const void* a_CustomPtr, const uint32_t a_AnimationFrameIndex);
+		uint32_t GetDrawPassCount() const;
 
 		/*
-		 * Add a draw call to the draw data for this frame.
-		 * a_MeshIndex is the index of the mesh to use for this draw call.
-		 * a_InstanceOffset is the offset into the instance data buffer to start drawing.
-		 * The AddInstance function returns the index of each added instance.
-		 * a_NumInstances is the amount of instances to consecutively draw.
-		 * a_DrawFlags specifies how this draw call will be executed (deferred, static, skeletal, shadowmapping etc.)
-		 * Multiple draw flags can be combined using the | operator.
+		 * Get the amount of draw calls that have been added for this frame.
 		 */
-		void AddDrawCall(uint32_t a_MeshIndex, uint32_t a_InstanceOffset, uint32_t a_NumInstances, const DrawFlags a_DrawFlags);
-	
+		uint32_t GetDrawCallCount() const;
+
+		/*
+		 * Get the amount of materials used by this frame.
+		 */
+		uint32_t GetMaterialCount() const;
+
+		/*
+		 * Get the amount of meshes used by this frame.
+		 */
+		uint32_t GetMeshCount() const;
+
+		/*
+		 * Get the amount of lights used by this frame.
+		 */
+	    uint32_t GetLightCount() const;
+
 	private:
-		Camera m_Camera;
-		std::vector<std::shared_ptr<EggMaterial>> m_Materials;
-		std::vector<std::shared_ptr<EggMesh>> m_Meshes;
-		std::vector<PackedInstanceData> m_PackedInstanceData;
-		std::vector<PackedLightData> m_PackedLightData;
-		std::vector<DrawCall> m_drawCalls;
+		Camera m_Camera;											//Camera for this frame.
+		std::vector<std::shared_ptr<EggMaterial>> m_Materials;		//All materials used during this frame.
+		std::vector<uint32_t> m_MaterialGpuIndices;					//Material indices on the GPU corresponding to m_Materials.
+		std::vector<PackedLightData> m_PackedLightData;				//Lights used during this frame.
+		std::vector<std::shared_ptr<EggMesh>> m_Meshes;				//All meshes used during this frame.
+		std::vector<PackedInstanceData> m_PackedInstanceData;		//Buffer of instance data, ready for upload.
+		std::vector<uint32_t> m_IndirectionBuffer;					//Indirection buffer, contains indices into instance data.
+
+		std::vector<DrawCall> m_drawCalls;							//Draw calls for this frame.
+		std::vector<DrawPass> m_DrawPasses;							//Draw passes referring to the draw calls.
 	};
+
+
+
+	void example_function()
+	{
+		//There's multiple types of light, each with a very simple implementation.
+		DirectionalLight light;
+
+		struct SceneNode
+		{
+			std::shared_ptr<EggMesh> mesh;
+			std::shared_ptr<EggMaterial> material;
+			glm::mat4 transform;
+			uint32_t id = 0;
+		} my_scene_object;
+
+		//Draw data to be consumed by a frame.
+		DrawData drawData;
+
+		/*
+		 * Add the individual resources and retrieve handles for them.
+		 * Note: Manually avoid duplicate adding of the same resource for better performance.
+		 */
+		const auto lightRef = drawData.AddLight(light);
+		const auto meshRef = drawData.AddMesh(my_scene_object.mesh);
+		const auto materialRef = drawData.AddMaterial(my_scene_object.material);
+		const auto instanceRef = drawData.AddInstance(my_scene_object.transform, materialRef, my_scene_object.id);
+
+		/*
+		 * Create a draw call that draws this one instance of the mesh.
+		 */
+		const auto drawCallRef = drawData.AddDrawCall(meshRef, &instanceRef, 1);
+
+		/*
+		 * Create a deferred draw pass that executes the draw call and shades it.
+		 * Also create a shadow pass for the same draw call which fills the shadow map for the light provided.
+		 */
+	    drawData.AddDeferredShadingDrawPass(&drawCallRef, 1);
+		drawData.AddShadowDrawPass(&drawCallRef, 1, lightRef);
+	}
 }

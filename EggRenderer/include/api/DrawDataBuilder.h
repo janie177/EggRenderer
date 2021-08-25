@@ -5,14 +5,6 @@
 
 namespace egg
 {
-	struct DrawCall;
-	struct DrawData;
-	class EggLight;
-	class EggMesh;
-	class EggMaterial;
-	class Camera;
-	enum class DrawFlags;
-
 	/**
 	 * TODO:
 	 * Builder for draw call objects.

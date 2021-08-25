@@ -103,6 +103,47 @@ namespace egg
 	};
 
 	/*
+     * Instance data that is packed and aligned correctly.
+     * Custom data can be stored in the last row of the matrix.
+     */
+	union PackedInstanceData
+	{
+		//Everything packed into a matrix.
+		glm::mat4 m_Data;
+
+		//Normally GLM matrices are column major, but I'll interpret them as row major instead.
+		struct
+		{
+			//4 columns 3 rows.
+			glm::mat4x3 m_Transform;
+
+			//Last column as individual components.
+			union
+			{
+				glm::vec4 m_CustomData;
+				struct
+				{
+					uint32_t m_MaterialId;
+					uint32_t m_CustomId;
+					uint32_t m_CustomData3;
+					uint32_t m_CustomData4;
+				};
+			};
+		};
+	};
+
+	/*
+	 * Light data ready to be uploaded to the GPU.
+	 * This struct can contain position, direction, radiance, angle, radius etc.
+	 */
+	struct PackedLightData
+	{
+		glm::vec4 m_Data1;
+		glm::vec4 m_Data2;
+		glm::vec4 m_Data3;
+	};
+
+	/*
 	 * A material instance with GPU backing memory.
 	 */
 	class Material : public EggMaterial, public Resource, public std::enable_shared_from_this<Material>
