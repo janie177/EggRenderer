@@ -50,14 +50,12 @@ namespace egg
         //Ensure that the material handle is valid.
         assert(static_cast<uint32_t>(a_MaterialHandle) < m_MaterialGpuIndices.size() && "Material handle referes to a material that was not added!");
 
-        PackedInstanceData instance;
+        auto& instance = m_PackedInstanceData.emplace_back();
 
-        //TODO verify that this correctly sets the rows and columns in the expected way. Discard row 4 (column major).
         instance.m_Transform = a_Transform;
         instance.m_MaterialId = m_MaterialGpuIndices[static_cast<uint32_t>(a_MaterialHandle)];
         instance.m_CustomId = a_CustomId;
-
-        m_PackedInstanceData.push_back(instance);
+        
         return static_cast<InstanceDataHandle>(m_PackedInstanceData.size() - 1);
     }
 
