@@ -17,15 +17,9 @@ namespace egg
         return m_DeferredRenderPass;
     }
 
-    void RenderStage_Deferred::SetDrawData(const DrawData& a_Data)
-    {
-        m_DrawData = &a_Data;
-    }
-
     bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
     {
-        m_InstanceDatas.resize(static_cast<size_t>(a_RenderData.m_Settings.m_SwapBufferCount + 1u)); //One extra buffer since otherwise I'd be uploading to an in flight buffer.
-        m_CurrentInstanceIndex = 0;
+        m_InstanceDatas.resize(static_cast<size_t>(a_RenderData.m_Settings.m_SwapBufferCount));
         m_Frames.resize(a_RenderData.m_Settings.m_SwapBufferCount);
 
         constexpr auto DEFERRED_COLOR_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -33,18 +27,24 @@ namespace egg
 
         /*
          * Create the descriptor pool and set layout for the instance data buffers.
+         * Two bindings are used, one for instance data and one for the indirection buffer.
          */
-        VkDescriptorSetLayoutBinding descriptorSetBinding{};
-        descriptorSetBinding.binding = 0;
-        descriptorSetBinding.descriptorCount = 1;
-        descriptorSetBinding.descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        descriptorSetBinding.pImmutableSamplers = nullptr;
-        descriptorSetBinding.stageFlags = VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT;
+        VkDescriptorSetLayoutBinding descriptorSetBinding[2]{{}, {}};
+        descriptorSetBinding[0].binding = 0;
+        descriptorSetBinding[0].descriptorCount = 1;
+        descriptorSetBinding[0].descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorSetBinding[0].pImmutableSamplers = nullptr;
+        descriptorSetBinding[0].stageFlags = VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT;
+        descriptorSetBinding[1].binding = 1;
+        descriptorSetBinding[1].descriptorCount = 1;
+        descriptorSetBinding[1].descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorSetBinding[1].pImmutableSamplers = nullptr;
+        descriptorSetBinding[1].stageFlags = VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT;
 
         VkDescriptorSetLayoutCreateInfo descriptorLayoutInfo{};
         descriptorLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        descriptorLayoutInfo.bindingCount = 1;
-        descriptorLayoutInfo.pBindings = &descriptorSetBinding;
+        descriptorLayoutInfo.bindingCount = 2;
+        descriptorLayoutInfo.pBindings = descriptorSetBinding;
 
         if (vkCreateDescriptorSetLayout(a_RenderData.m_Device, &descriptorLayoutInfo, nullptr, &m_InstanceDescriptorSetLayout) != VK_SUCCESS)
         {
@@ -439,68 +439,6 @@ namespace egg
             }
         }
 
-        /*
-         * Set up the objects required per frame to upload instance data to the GPU.
-         */
-
-         //Choose the last upload queue, and otherwise the second last or last graphics queue.
-         //I am disgusted by this abhorrent line of code. Apologies to anyone reading this.
-        m_UploadQueue = &(!a_RenderData.m_TransferQueues.empty() ? a_RenderData.m_TransferQueues[a_RenderData.m_TransferQueues.size() - 1]
-            : a_RenderData.m_GraphicsQueues.size() > 2 ? a_RenderData.m_GraphicsQueues[a_RenderData.m_GraphicsQueues.size() - 2]
-            : a_RenderData.m_GraphicsQueues[a_RenderData.m_GraphicsQueues.size() - 1]);
-
-        //Set up instance data.
-        for (uint32_t i = 0; i < static_cast<uint32_t>(m_InstanceDatas.size()); ++i)
-        {
-            auto& instanceData = m_InstanceDatas[i];
-
-            //For the buffers, I just set the size to 0. Then when the frames happen, they will automatically resize as needed.
-            instanceData.m_InstanceBufferEntrySize = 0;
-            instanceData.m_InstanceDataBuffer = nullptr;
-            instanceData.m_InstanceBufferAllocation = nullptr;
-            instanceData.m_InstanceStagingBufferAllocation = nullptr;
-            instanceData.m_InstanceStagingDataBuffer = nullptr;
-
-
-            //Create a command pool
-            VkCommandPoolCreateInfo commandPoolInfo{};
-            commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-            commandPoolInfo.queueFamilyIndex = m_UploadQueue->m_FamilyIndex;
-            if (vkCreateCommandPool(a_RenderData.m_Device, &commandPoolInfo, nullptr, &instanceData.m_UploadCommandPool) != VK_SUCCESS)
-            {
-                printf("Could not create command pool for instance data uploading in deferred stage!\n");
-                return false;
-            }
-
-            VkCommandBufferAllocateInfo commandBufferInfo{};
-            commandBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-            commandBufferInfo.commandBufferCount = 1;
-            commandBufferInfo.commandPool = instanceData.m_UploadCommandPool;
-            commandBufferInfo.level = VkCommandBufferLevel::VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            if (vkAllocateCommandBuffers(a_RenderData.m_Device, &commandBufferInfo, &instanceData.m_UploadCommandBuffer) != VK_SUCCESS)
-            {
-                printf("Could not allocate command buffer to upload frame data with in deferred stage.\n");
-                return false;
-            }
-
-            VkSemaphoreCreateInfo semaphoreInfo{};
-            semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-            if (vkCreateSemaphore(a_RenderData.m_Device, &semaphoreInfo, nullptr, &instanceData.m_UploadSemaphore) != VK_SUCCESS)
-            {
-                printf("Could not create semaphore in deferred stage.\n");
-                return false;
-            }
-
-            VkFenceCreateInfo fenceInfo{};
-            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-            fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-            if (vkCreateFence(a_RenderData.m_Device, &fenceInfo, nullptr, &instanceData.m_UploadFence) != VK_SUCCESS)
-            {
-                printf("Could not create semaphore in deferred stage.\n");
-                return false;
-            }
-        }
-
         return true;
     }
 
@@ -510,22 +448,7 @@ namespace egg
         vkDestroyDescriptorPool(a_RenderData.m_Device, m_InstanceDescriptorPool, nullptr);
         vkDestroyDescriptorSetLayout(a_RenderData.m_Device, m_InstanceDescriptorSetLayout, nullptr);
 
-        //Destroy instance data objects.
-        for (uint32_t i = 0; i < static_cast<uint32_t>(m_InstanceDatas.size()); ++i)
-        {
-            auto& instanceData = m_InstanceDatas[i];
-            vkDestroyCommandPool(a_RenderData.m_Device, instanceData.m_UploadCommandPool, nullptr);
-            vkDestroySemaphore(a_RenderData.m_Device, instanceData.m_UploadSemaphore, nullptr);
-            vkDestroyFence(a_RenderData.m_Device, instanceData.m_UploadFence, nullptr);
-            if (instanceData.m_InstanceBufferEntrySize != 0)
-            {
-                vmaDestroyBuffer(a_RenderData.m_Allocator, instanceData.m_InstanceDataBuffer, instanceData.m_InstanceBufferAllocation);
-                vmaDestroyBuffer(a_RenderData.m_Allocator, instanceData.m_InstanceStagingDataBuffer, instanceData.m_InstanceStagingBufferAllocation);
-            }
-            instanceData.m_GpuDrawCallDatas.clear();
-            instanceData.m_InstanceBufferEntrySize = 0;
-        }
-
+    	//Pipelines!
         vkDestroyPipeline(a_RenderData.m_Device, m_DeferredPipelineData.m_Pipeline, nullptr);
         vkDestroyPipelineLayout(a_RenderData.m_Device, m_DeferredPipelineData.m_PipelineLayout, nullptr);
         vkDestroyPipeline(a_RenderData.m_Device, m_DeferredProcessingPipelineData.m_Pipeline, nullptr);
@@ -570,165 +493,45 @@ namespace egg
         /*
          * Uploading data for the next frame.
          */
-        auto& frame = m_Frames[a_CurrentFrameIndex];
-        auto& currentInstanceData = m_InstanceDatas[m_CurrentInstanceIndex];
-        const uint32_t previousInstanceDataIndex = (m_CurrentInstanceIndex - 1) > static_cast<uint32_t>(m_InstanceDatas.size()) ? static_cast<uint32_t>(m_InstanceDatas.size()) - 1 : (m_CurrentInstanceIndex - 1);
-        auto& previousInstanceData = m_InstanceDatas[previousInstanceDataIndex];
+        auto& frame = a_RenderData.m_FrameData[a_CurrentFrameIndex];
+        auto& currentInstanceData = m_InstanceDatas[a_CurrentFrameIndex];
 
-        //Clear old stuff.
-        currentInstanceData.m_GpuDrawCallDatas.clear();
-        vkResetCommandPool(a_RenderData.m_Device, currentInstanceData.m_UploadCommandPool, 0);
+		//Update the descriptor set to point to the instance data and indirection buffer.
+        VkDescriptorBufferInfo descriptorBufferInfo[2]{};
+        const auto& indirectionBuffer = a_RenderData.m_FrameData[a_CurrentFrameIndex].m_UploadData.m_IndirectionBuffer;
+        descriptorBufferInfo[0].offset = 0; //Note that this is relative to the buffer, so 0 for all of it.
+    										//This is NOT the same as the VMA allocation info offset, which refers to an entire block.
+        descriptorBufferInfo[0].buffer = indirectionBuffer.GetBuffer();
+        descriptorBufferInfo[0].range = VK_WHOLE_SIZE;
+    	
+        const auto& instanceBuffer = a_RenderData.m_FrameData[a_CurrentFrameIndex].m_UploadData.m_InstanceBuffer;
+        descriptorBufferInfo[1].offset = 0;
+        descriptorBufferInfo[1].buffer = instanceBuffer.GetBuffer();
+        descriptorBufferInfo[1].range = VK_WHOLE_SIZE;
 
-        //Offset into the uploaded data (and will also be equal to the total size after the loop).
-        uint32_t offset = 0;
-        for (auto& drawCall : m_DrawData->m_DynamicDrawCalls)
-        {
-            currentInstanceData.m_GpuDrawCallDatas.emplace_back(GpuDrawCallData{
-                std::static_pointer_cast<Mesh>(drawCall.m_Mesh),
-                offset,
-                static_cast<uint32_t>(drawCall.m_InstanceData.size())
-            });
+        VkWriteDescriptorSet setWrite[2]{};
+        setWrite[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        setWrite[0].descriptorCount = 1;
+        setWrite[0].descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        setWrite[0].dstBinding = 0;
+        setWrite[0].dstArrayElement = 0;
+        setWrite[0].dstSet = currentInstanceData.m_InstanceDataDescriptorSet;
+        setWrite[0].pBufferInfo = &descriptorBufferInfo[0];
+        setWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        setWrite[1].descriptorCount = 1;
+        setWrite[1].descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        setWrite[1].dstBinding = 1;
+        setWrite[1].dstArrayElement = 0;
+        setWrite[1].dstSet = currentInstanceData.m_InstanceDataDescriptorSet;
+        setWrite[1].pBufferInfo = &descriptorBufferInfo[1];
 
-            offset += static_cast<uint32_t>(drawCall.m_InstanceData.size());
-        }
+    	//Do two writes within the set: instance and indirection data.
+        vkUpdateDescriptorSets(a_RenderData.m_Device, 2, &setWrite[0], 0, nullptr);
 
-        //If the buffer is too small, allocate 50% extra.
-        if (currentInstanceData.m_InstanceBufferEntrySize < offset)
-        {
-            //First deallocate if a previous allocation exists.
-            if (currentInstanceData.m_InstanceBufferEntrySize != 0)
-            {
-                vmaDestroyBuffer(a_RenderData.m_Allocator, currentInstanceData.m_InstanceDataBuffer, currentInstanceData.m_InstanceBufferAllocation);
-                vmaDestroyBuffer(a_RenderData.m_Allocator, currentInstanceData.m_InstanceStagingDataBuffer, currentInstanceData.m_InstanceStagingBufferAllocation);
-            }
-
-            //Grow by the golden ratio because I guess that's probably the sweet spot between memory usage and average copies per entry.
-            const uint32_t newSize = static_cast<uint32_t>(1.618f * static_cast<float>(offset));
-            currentInstanceData.m_InstanceBufferEntrySize = newSize;
-
-            //The first buffer is the GPU buffer that is not host accessible.
-            VkBufferCreateInfo bufferInfo{};
-            bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferInfo.size = static_cast<VkDeviceSize>(newSize) * sizeof(PackedInstanceData);
-            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            bufferInfo.usage = VkBufferUsageFlagBits::VK_BUFFER_USAGE_TRANSFER_DST_BIT | VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-            VmaAllocationCreateInfo vmaAllocateInfo{};
-            vmaAllocateInfo.priority = 1.f;
-            vmaAllocateInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-            //Create the GPU buffer with the correct alignment for shader reads.
-            if (vmaCreateBufferWithAlignment(a_RenderData.m_Allocator, &bufferInfo, &vmaAllocateInfo, 16, &currentInstanceData.m_InstanceDataBuffer,
-                &currentInstanceData.m_InstanceBufferAllocation, &currentInstanceData.m_GpuBufferInfo) != VK_SUCCESS)
-            {
-                printf("Could not resize GPU buffer for instance data in deferred stage!\n");
-                return false;
-            }
-
-            //Re-use the structs from the previous buffer for the host visible staging buffer.
-            bufferInfo.usage = VkBufferUsageFlagBits::VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-            vmaAllocateInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-
-            if (vmaCreateBufferWithAlignment(a_RenderData.m_Allocator, &bufferInfo, &vmaAllocateInfo, 16, &currentInstanceData.m_InstanceStagingDataBuffer,
-                &currentInstanceData.m_InstanceStagingBufferAllocation, nullptr) != VK_SUCCESS)
-            {
-                printf("Could not resize staging buffer for instance data in deferred stage!\n");
-                return false;
-            }
-
-            //Retrieve information about the allocations.
-            vmaGetAllocationInfo(a_RenderData.m_Allocator, currentInstanceData.m_InstanceStagingBufferAllocation, &currentInstanceData.m_StagingBufferInfo);
-            vmaGetAllocationInfo(a_RenderData.m_Allocator, currentInstanceData.m_InstanceBufferAllocation, &currentInstanceData.m_GpuBufferInfo);
-
-            //Finally update the descriptor set for this frame to point to the new buffer.
-            VkDescriptorBufferInfo descriptorBufferInfo{};
-            descriptorBufferInfo.offset = 0;
-            descriptorBufferInfo.buffer = currentInstanceData.m_InstanceDataBuffer;
-            descriptorBufferInfo.range = VK_WHOLE_SIZE;
-
-            VkWriteDescriptorSet setWrite{};
-            setWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            setWrite.descriptorCount = 1;
-            setWrite.descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            setWrite.dstBinding = 0;
-            setWrite.dstArrayElement = 0;
-            setWrite.dstSet = currentInstanceData.m_InstanceDataDescriptorSet;
-            setWrite.pBufferInfo = &descriptorBufferInfo;
-
-            vkUpdateDescriptorSets(a_RenderData.m_Device, 1, &setWrite, 0, nullptr);
-        }
-
-        //Copy the per frame data over.
-        currentInstanceData.m_Camera = m_DrawData->m_Camera;
-
-        //Stage the instance data and transfer it to the fast GPU memory.
-        if (offset != 0)
-        {
-            //First map the memory and then place the instance data there. NOTE: device memory is shared for multiple allocations!!! Use the offset too.
-            void* data;
-            vkMapMemory(a_RenderData.m_Device, currentInstanceData.m_StagingBufferInfo.deviceMemory, currentInstanceData.m_StagingBufferInfo.offset,
-                currentInstanceData.m_StagingBufferInfo.size, 0, &data);
-            size_t byteOffset = 0;
-            for (auto& drawCall : m_DrawData->m_DynamicDrawCalls)
-            {
-                size_t size = drawCall.m_InstanceData.size() * sizeof(PackedInstanceData);
-                void* start = static_cast<unsigned char*>(data) + byteOffset;
-                memcpy(start, drawCall.m_InstanceData.data(), size);
-                byteOffset += size;
-            }
-            vkUnmapMemory(a_RenderData.m_Device, currentInstanceData.m_StagingBufferInfo.deviceMemory);
-
-            VkCommandBufferBeginInfo beginInfo;
-            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-            beginInfo.pInheritanceInfo = nullptr;
-            beginInfo.pNext = nullptr;
-
-            if (vkBeginCommandBuffer(currentInstanceData.m_UploadCommandBuffer, &beginInfo) != VK_SUCCESS)
-            {
-                printf("Could not begin recording copy command buffer in deferred stage!\n");
-            }
-
-            //Specify which data to copy where.
-            VkBufferCopy copyInfo{};
-            copyInfo.size = byteOffset;
-            copyInfo.dstOffset = 0;
-            copyInfo.srcOffset = 0;
-            vkCmdCopyBuffer(currentInstanceData.m_UploadCommandBuffer, currentInstanceData.m_InstanceStagingDataBuffer,
-                currentInstanceData.m_InstanceDataBuffer, 1, &copyInfo);
-
-            //Stop recording.
-            vkEndCommandBuffer(currentInstanceData.m_UploadCommandBuffer);
-
-            //Signal the semaphore when done.
-            VkSubmitInfo submitInfo{};
-            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            submitInfo.commandBufferCount = 1;
-            submitInfo.pCommandBuffers = &currentInstanceData.m_UploadCommandBuffer;
-            submitInfo.pNext = nullptr;
-            submitInfo.pWaitDstStageMask = nullptr;
-            submitInfo.pWaitSemaphores = nullptr;
-            submitInfo.waitSemaphoreCount = 0;
-            submitInfo.signalSemaphoreCount = 1;
-            submitInfo.pSignalSemaphores = &currentInstanceData.m_UploadSemaphore;
-
-            //Take the first transfer queue, and if not present take the last generic graphics queue.
-            const auto& transferQueue = m_UploadQueue->m_Queue;
-
-            //Submit the upload work. The fence provided is not currently used, but useful for debugging.
-            vkResetFences(a_RenderData.m_Device, 1, &currentInstanceData.m_UploadFence);
-            vkQueueSubmit(transferQueue, 1, &submitInfo, currentInstanceData.m_UploadFence);
-        }
-
+    	
         /*
          * Rendering the current frame.
          */
-
-         //Wait with the vertex shader stages till the previous frame's instance data has finished uploading (if there's something to wait for).
-        if (!previousInstanceData.m_GpuDrawCallDatas.empty())
-        {
-            a_WaitSemaphores.push_back(previousInstanceData.m_UploadSemaphore);
-            a_WaitStageFlags.push_back(VkPipelineStageFlagBits::VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
-        }
 
         //First set the pipeline and pass
         VkRenderPassBeginInfo renderPassInfo{};
@@ -743,6 +546,7 @@ namespace egg
             a_RenderData.m_Settings.clearColor.b,
             a_RenderData.m_Settings.clearColor.a
         };
+    	//Clear depth attachment with 1.0, and the rest with the provided clear color
         VkClearValue clearColors[DEFERRED_ATTACHMENT_MAX_ENUM + 1]
         {
             {1.f}, clearColor, clearColor, clearColor, clearColor, clearColor
@@ -752,34 +556,45 @@ namespace egg
         vkCmdBeginRenderPass(a_CommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineData.m_Pipeline);
 
+        auto& drawData = *frame.m_DrawData;
+    	
         //Put the previous frame's camera in the push constants.
         DeferredPushConstants pushData;
-        pushData.m_VPMatrix = previousInstanceData.m_Camera.CalculateVPMatrix();
+        pushData.m_VPMatrix = drawData.m_Camera.CalculateVPMatrix();
 
         //Bind the push constants.
         vkCmdPushConstants(a_CommandBuffer, m_DeferredPipelineData.m_PipelineLayout, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT,
             0, sizeof(DeferredPushConstants), &pushData);
 
         vkCmdBindDescriptorSets(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineData.m_PipelineLayout,
-            0, 1, &previousInstanceData.m_InstanceDataDescriptorSet, 0, nullptr);
+            0, 1, &currentInstanceData.m_InstanceDataDescriptorSet, 0, nullptr);
 
-        for (auto& gpuDrawData : previousInstanceData.m_GpuDrawCallDatas)
+        for (auto& drawPass : drawData.m_DrawPasses)
         {
-            auto& mesh = gpuDrawData.m_Mesh;
-            const auto buffer = gpuDrawData.m_Mesh->GetBuffer();
-            const auto vertexOffset = mesh->GetVertexBufferOffset();
-            const auto indexBufferOffset = mesh->GetIndexBufferOffset();
+        	//First do static deferred shading.
+            if(drawPass.m_Type == DrawPassType::STATIC_DEFERRED_SHADING)
+            {
+	            for(int drawCallIndex : drawPass.m_DrawCalls)
+	            {
+                    auto& drawCall = drawData.m_drawCalls[drawCallIndex];
+	            	
+                    const auto& mesh = std::static_pointer_cast<Mesh>(drawData.m_Meshes[drawCall.m_MeshIndex]);
+                    const auto buffer = mesh->GetBuffer();
+                    const auto vertexOffset = mesh->GetVertexBufferOffset();
+                    const auto indexBufferOffset = mesh->GetIndexBufferOffset();
 
-            //Vertex and index data is stored in the same buffer.
-            vkCmdBindVertexBuffers(a_CommandBuffer, 0, 1, &buffer, &vertexOffset);
-            vkCmdBindIndexBuffer(a_CommandBuffer, buffer, indexBufferOffset, VkIndexType::VK_INDEX_TYPE_UINT32);
+                    //Vertex and index data is stored in the same buffer.
+                    vkCmdBindVertexBuffers(a_CommandBuffer, 0, 1, &buffer, &vertexOffset);
+                    vkCmdBindIndexBuffer(a_CommandBuffer, buffer, indexBufferOffset, VkIndexType::VK_INDEX_TYPE_UINT32);
 
-            //Push constants contain the offset and and total instance count in the first vec4.
-            glm::uvec4 drawLocalData{ gpuDrawData.m_InstanceOffset, gpuDrawData.m_InstanceCount, 0, 0 };
-            vkCmdPushConstants(a_CommandBuffer, m_DeferredPipelineData.m_PipelineLayout, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::uvec4), &drawLocalData);
+                    //Push constants contain the offset and and total instance count in the first vec4.
+                    //vkCmdPushConstants(a_CommandBuffer, m_DeferredPipelineData.m_PipelineLayout, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), sizeof(glm::uvec4), &drawLocalData);
 
-            //Instanced draw call
-            vkCmdDrawIndexed(a_CommandBuffer, static_cast<uint32_t>(mesh->GetNumIndices()), static_cast<uint32_t>(gpuDrawData.m_InstanceCount), 0, 0, 0);
+                    //Instanced draw call.
+	            	//Offset into the indirection buffer is passed as the first instance.
+                    vkCmdDrawIndexed(a_CommandBuffer, static_cast<uint32_t>(mesh->GetNumIndices()), static_cast<uint32_t>(drawCall.m_NumInstances), 0, 0, drawCall.m_IndirectionBufferOffset);
+	            }
+            }
         }
 
         //Next pass!
@@ -793,28 +608,18 @@ namespace egg
         vkCmdBindDescriptorSets(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredProcessingPipelineData.m_PipelineLayout, 0, 2, sets, 0, nullptr);
 
         DeferredProcessingPushConstants processingPushData;
-        processingPushData.m_CameraPosition = glm::vec4(previousInstanceData.m_Camera.GetTransform().GetTranslation(), 0.f);
+        processingPushData.m_CameraPosition = glm::vec4(drawData.m_Camera.GetTransform().GetTranslation(), 0.f);
         vkCmdPushConstants(a_CommandBuffer, m_DeferredProcessingPipelineData.m_PipelineLayout, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT,
             0, sizeof(DeferredProcessingPushConstants), &processingPushData);
 
         vkCmdDraw(a_CommandBuffer, 3, 1, 0, 0); //Draw a full-screen triangle.
         vkCmdEndRenderPass(a_CommandBuffer);
-
-        //Finally increment the instance index to use for the next frame.
-        ++m_CurrentInstanceIndex;
-        if (m_CurrentInstanceIndex >= static_cast<uint32_t>(m_InstanceDatas.size()))
-        {
-            m_CurrentInstanceIndex = 0;
-        }
-
+    	
         return true;
     }
 
     void RenderStage_Deferred::WaitForIdle(const RenderData& a_RenderData)
     {
-        for (auto& data : m_InstanceDatas)
-        {
-            vkWaitForFences(a_RenderData.m_Device, 1, &data.m_UploadFence, true, std::numeric_limits<uint32_t>::max());
-        }
+        //Nothing to wait for here.
     }
 }

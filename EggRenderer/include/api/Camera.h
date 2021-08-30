@@ -42,6 +42,14 @@ namespace egg
 		}
 
 		/*
+		 * Get a const reference to the camera transform.
+		 */
+		const Transform& GetTransform() const
+		{
+			return m_Transform;
+		}
+
+		/*
 		 * Calculate the view projection matrices combined.
 		 */
 		glm::mat4 CalculateVPMatrix() const

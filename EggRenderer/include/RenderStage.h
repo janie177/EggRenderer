@@ -6,13 +6,13 @@
 #include "Resources.h"
 #include "RenderUtility.h"
 #include "vk_mem_alloc.h"
+#include "DrawData.h"
 
 namespace egg
 {
     //Forward declare the settings used for rendering.
 	struct RenderData;
 	struct QueueInfo;
-    struct DrawData;
 
 	/*
 	 * 128 byte struct to send data to the shader quickly.
@@ -111,6 +111,9 @@ namespace egg
 		std::vector<VkFramebuffer> m_FrameBuffers;	//Framebuffers for each frame.
 	};
 
+	/*
+	 * Render stage that does all deferred rendering.
+	 */
 	class RenderStage_Deferred : public RenderStage
 	{
 	public:
@@ -118,8 +121,6 @@ namespace egg
 		 * Get a reference to the render pass (layout is required for constructing frame buffers).
 		 */
 		VkRenderPass& GetRenderPass();
-
-		void SetDrawData(const DrawData& a_Data);
 
 		bool Init(const RenderData& a_RenderData) override;
 
@@ -131,11 +132,6 @@ namespace egg
 
 		void WaitForIdle(const RenderData& a_RenderData) override;
 	private:
-		/*
-		 * Draw call data pointer (valid during the frame).
-		 */
-		const DrawData* m_DrawData;
-
 		/*
 		 * Pipeline objects for the deferred rendering stage.
 		 */
@@ -158,37 +154,10 @@ namespace egg
 			DEFERRED_ATTACHMENT_MAX_ENUM
 		};
 
-		struct GpuDrawCallData
-		{
-			std::shared_ptr<Mesh> m_Mesh;
-			uint32_t m_InstanceOffset;
-			uint32_t m_InstanceCount;
-		};
-
 		struct InstanceData
 		{
-			//Buffer on the GPU containing all instance data for a frame.
-			VmaAllocation m_InstanceBufferAllocation;
-			VkBuffer m_InstanceDataBuffer;
-			VmaAllocation m_InstanceStagingBufferAllocation;
-			VkBuffer m_InstanceStagingDataBuffer;
-			VmaAllocationInfo m_StagingBufferInfo;
-			VmaAllocationInfo m_GpuBufferInfo;
-			size_t m_InstanceBufferEntrySize;	//The amount of instance data objects that fit in this buffer.
-
-			//The upload command buffer and pool. The semaphore signals when uploading is finished.
-			VkCommandPool m_UploadCommandPool;
-			VkCommandBuffer m_UploadCommandBuffer;
-			VkSemaphore m_UploadSemaphore;
-			VkFence m_UploadFence;
-
-			//Instance data descriptor set containing the buffer.
+			//Instance data descriptor set pointing to the instance data buffer.
 			VkDescriptorSet m_InstanceDataDescriptorSet;
-
-			//A copy of the camera and all offsets and mesh data.
-			Camera m_Camera;
-			std::vector<GpuDrawCallData> m_GpuDrawCallDatas;
-
 		};
 
 		/*
@@ -208,9 +177,6 @@ namespace egg
 			VkDescriptorSet m_DescriptorSet;
 		};
 
-		//The queue used for uploading instance data.
-		const QueueInfo* m_UploadQueue;
-
 		//Descriptor pool and set for the deferred processing.
 		VkDescriptorPool m_ProcessingDescriptorPool;
 		VkDescriptorSetLayout m_ProcessingDescriptorSetLayout;
@@ -222,8 +188,7 @@ namespace egg
 		//Separate buffers for each frame.
 		std::vector<DeferredFrame> m_Frames;
 
-		//Since the swapchain is deferred, swapCount + 1 instance buffers are needed to ensure
-		uint32_t m_CurrentInstanceIndex;
+		//Accessors for the instance data buffers.
 		std::vector<InstanceData> m_InstanceDatas;
 	};
 }

@@ -260,7 +260,7 @@ namespace egg
         vkDestroyPipelineLayout(a_RenderData.m_Device, m_PipelineLayout, nullptr);
 
         //Destroy the frame buffers for each frame.
-        for (int i = 0; i < a_RenderData.m_Settings.m_SwapBufferCount; ++i)
+        for (uint32_t i = 0; i < a_RenderData.m_Settings.m_SwapBufferCount; ++i)
         {
             vkDestroyFramebuffer(a_RenderData.m_Device, m_FrameBuffers[i], nullptr);
         }

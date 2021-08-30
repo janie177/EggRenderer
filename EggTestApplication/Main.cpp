@@ -6,6 +6,12 @@
 #include "InputQueue.h"
 #include "Timer.h"
 
+struct MeshInstance
+{
+    glm::mat4 transform = glm::identity<glm::mat4>();
+    uint32_t materialIndex = 0;
+    uint32_t customId = 0;
+};
 
 /*
  * Program entry point.
@@ -52,15 +58,15 @@ int main()
         }
     	
         //Sphere instances
-        constexpr auto NUM_CUBE_INSTANCES = 100000;
-        std::vector<MeshInstance> meshInstances(NUM_CUBE_INSTANCES);
+        constexpr auto NUM_SPHERE_INSTANCES = 100000;
+        std::vector<MeshInstance> meshInstances(NUM_SPHERE_INSTANCES);
         Transform t;
-        for(int i = 0; i < NUM_CUBE_INSTANCES; ++i)
+        for(int i = 0; i < NUM_SPHERE_INSTANCES; ++i)
         {
             t.Translate(t.GetForward() * 0.2f);
             t.Translate(t.GetUp() * 0.2f);
             t.RotateAround({ 0.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, 0.1f);
-            meshInstances[i].m_Transform = t.GetTransformation();
+            meshInstances[i].transform = t.GetTransformation();
         }
 
     	//Plane instance (default constructed)
@@ -78,29 +84,45 @@ int main()
         materialInfo.m_RoughnessFactor = 1.f;
         auto planeMaterial = renderer->CreateMaterial(materialInfo);
 
-        //Draw information and draw calls.
-        DrawData drawData;
-
-
-        auto planeDrawCall = renderer->CreateDynamicDrawCall(planeMesh, planeInstances, { planeMaterial });
-    	
-        Timer memTimer;
-        auto drawCall = renderer->CreateDynamicDrawCall(sphereMesh, meshInstances, {material});
-        printf("Time to create dynamic draw call: %f millis.\n", memTimer.Measure(TimeUnit::MILLIS));
-    	
-    	//Build it all into a draw data object.
-        drawData.SetCamera(camera).AddDrawCall(planeDrawCall).AddDrawCall(drawCall);
-
-        //Time FPS etc.
-        Timer timer;
-
         //Main loop
+        Timer timer;
         static int frameIndex = 0;
         bool run = true;
         while(run)
         {
+            //Start clocking the time and increment the current frame.
             timer.Reset();
             ++frameIndex;
+        	
+            //Build the draw calls and passes.
+            auto drawData = renderer->CreateDrawData();
+
+            //Fill the draw data.
+            std::vector<MeshHandle> meshes;
+            std::vector<MaterialHandle> materials;
+            std::vector<InstanceDataHandle> instances;
+            materials.emplace_back(drawData->AddMaterial(material));
+            materials.emplace_back(drawData->AddMaterial(planeMaterial));
+            meshes.emplace_back(drawData->AddMesh(sphereMesh));
+            meshes.emplace_back(drawData->AddMesh(planeMesh));
+
+            for (auto& instance : planeInstances)
+            {
+                instances.emplace_back(drawData->AddInstance(instance.transform, materials[instance.customId], instance.customId));
+            }
+            for (auto& instance : meshInstances)
+            {
+                instances.emplace_back(drawData->AddInstance(instance.transform, materials[instance.customId], instance.customId));
+            }
+
+            //Creat the draw calls and define the passes for them.
+            auto planeDrawCall = drawData->AddDrawCall(meshes[0], instances.data(), planeInstances.size());
+            auto sphereDrawCall = drawData->AddDrawCall(meshes[1], &instances[1], NUM_SPHERE_INSTANCES);
+            drawData->AddDeferredShadingDrawPass(&planeDrawCall, 1);
+            drawData->AddDeferredShadingDrawPass(&sphereDrawCall, 1);
+
+            //Set the camera.
+            drawData->SetCamera(camera);
 
             //Randomly change material color once in a while.
             if(frameIndex % 100 == 0)
@@ -111,8 +133,7 @@ int main()
                 material->SetAlbedoFactor({ r, g, b });
             }
 
-            //Draw
-            drawData.SetCamera(camera); //Update camera.
+            //Draw. This takes ownership of drawData.
             run = renderer->DrawFrame(drawData);
 
             //Update input

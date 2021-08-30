@@ -4,16 +4,16 @@
 #include <glm/glm/ext/matrix_transform.hpp>
 #include <string>
 
+#include "EggDrawData.h"
 #include "Camera.h"
 #include "EggMaterial.h"
 #include "EggMesh.h"
 #include "InputQueue.h"
-#include "DrawData.h"
 
 namespace egg
 {
     class EggRenderer;
-    struct MeshInstance;
+	class EggDrawData;
 
 	/*
      * The vertex format for meshes.
@@ -158,22 +158,11 @@ namespace egg
 
 		/*
 		 * Draw the next frame.
-		 */
-		virtual bool DrawFrame(DrawData& a_DrawData) = 0;
-
-		/*
-		 * Create a dynamic draw-call from the meshes.
-		 * The mesh and all instances to be included should be provided.
-		 * The mesh instances contain indices into the a_Materials vector.
+		 * The DrawData object provided will be consumed upon calling.
 		 *
-		 * Compiling a draw call stores all data in a compact format.
-		 * Changes to materials or transforms will require a recompilation.
+		 * Returns true if no horrible things happened (explosions, plagues, forgetting to activate AH bonus box etc..).
 		 */
-		virtual DynamicDrawCall CreateDynamicDrawCall(
-			const std::shared_ptr<EggMesh>& a_Mesh,
-			const std::vector<MeshInstance>& a_Instances,
-			const std::vector<std::shared_ptr<EggMaterial>>& a_Materials,
-			bool a_Transparent = false) = 0;
+		virtual bool DrawFrame(std::unique_ptr<EggDrawData>& a_DrawData) = 0;
 
 		/*
 		 * Create a new material with the given properties.
@@ -229,6 +218,15 @@ namespace egg
 		 * To e.g. turn a cube into a rectangle, the initial transform can be used to not affect the normals this way.
 		 */
 		virtual std::shared_ptr<EggMesh> CreateMesh(const ShapeCreateInfo& a_ShapeCreateInfo) = 0;
+
+		/*
+		 * Create a new DrawData object.
+		 * This object can be used to define resources and drawing operations.
+		 * It is passed to the DrawFrame() function, which takes ownership.
+		 *
+		 * Returns a unique pointer containing the new DrawData object.
+		 */
+		virtual std::unique_ptr<EggDrawData> CreateDrawData() = 0;
 
 	};
 

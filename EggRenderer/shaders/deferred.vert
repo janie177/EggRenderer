@@ -22,53 +22,19 @@ layout( push_constant ) uniform PushData {
   vec4 data4;
 } pushData;
 
-//struct InstanceData
-//{
-//    vec4 column1;
-//    vec4 column2;
-//    vec4 column3;
-//    vec4 column4;
-//};
-//
-//layout (std430, binding = 0) buffer InstanceDataBuffer
-//{
-//    InstanceData instances[];
-//
-//} instanceBuffer;
-//
-//vec4 Transform(InstanceData data, vec4 vector);
-//
-//void main() 
-//{
-//    uint offset = floatBitsToInt(pushData.data1.x) + gl_InstanceIndex;
-//
-//    //The material and mesh ID are stored in the matrix to save uploading bandwidth.
-//    outMaterialId = floatBitsToUint(instanceBuffer.instances[offset].column1[3]);       
-//    outCustomId = floatBitsToUint(instanceBuffer.instances[offset].column2[3]);
-//
-//    outNormal = vec3(Transform(instanceBuffer.instances[offset], vec4(inNormal, 0.0)));
-//
-//    vec4 pos = Transform(instanceBuffer.instances[offset], vec4(inPosition, 1.0));
-//    outPosition = vec3(pos);
-//    outTangent = vec4((Transform(instanceBuffer.instances[offset], vec4(inTangent.xyz, 0.f)).xyz), inTangent.w);
-//
-//    gl_Position = pushData.viewProjectionMatrix * pos;
-//}
-//
-//vec4 Transform(InstanceData data, vec4 vector)
-//{
-//    const float dot1 = dot(vec4(data.column1.x, data.column2.x, data.column3.x, 0), vector);
-//    const float dot2 = dot(vec4(data.column1.y, data.column2.y, data.column3.y, 0), vector);
-//    const float dot3 = dot(vec4(data.column1.z, data.column2.z, data.column3.z, 0), vector);
-//    return vec4(dot1, dot2, dot3, vector.w);
-//}
-
 struct InstanceData
 {
-    mat4 transform;
+    mat4x3 transform;   //The transform with 4 columns and 3 rows.
+    uvec4 customData;   //Four uints containing: material id(0), custom id(1)
 };
 
-layout (std430, binding = 0) buffer InstanceDataBuffer
+layout (std430, binding = 0) buffer IndirectionBuffer
+{
+    uint indices[];
+
+} indirectionBuffer;
+
+layout (std430, binding = 1) buffer InstanceDataBuffer
 {
     InstanceData instances[];
 
@@ -76,20 +42,18 @@ layout (std430, binding = 0) buffer InstanceDataBuffer
 
 void main() 
 {
-    uint offset = floatBitsToInt(pushData.data1.x) + gl_InstanceIndex;
-    mat4 transform = instanceBuffer.instances[offset].transform;
+    //gl_InstanceIndex is equal to the index of the instance data indirection buffer thanks to the instance offset in the draw command.
+    InstanceData instance = instanceBuffer.instances[indirectionBuffer.indices[gl_InstanceIndex]];
 
     //The material and mesh ID are stored in the matrix to save uploading bandwidth.
-    outMaterialId = floatBitsToUint(transform[0][3]);       
-    outCustomId = floatBitsToUint(transform[1][3]);
-    transform[0][3] = 0;
-    transform[1][3] = 0;
+    outMaterialId = instance.customData[0];    
+    outCustomId = instance.customData[1];
 
-    outNormal = vec3(transform * vec4(inNormal, 0.0));
+    outNormal = vec3(instance.transform * vec4(inNormal, 0.0));
 
-    vec4 pos = transform * vec4(inPosition, 1.0);
+    vec4 pos = vec4(instance.transform * vec4(inPosition, 1.0), 1.0);
     outPosition = vec3(pos);
-    outTangent = vec4(((transform * vec4(inTangent.xyz, 0.f)).xyz), inTangent.w);
+    outTangent = vec4(((instance.transform * vec4(inTangent.xyz, 0.f)).xyz), inTangent.w);
 
     gl_Position = pushData.viewProjectionMatrix * pos;
 }

@@ -1,7 +1,7 @@
 #include "api/DrawDataBuilder.h"
 
 #include "Resources.h"
-#include "api/DrawData.h"
+#include "DrawData.h"
 
 namespace egg
 {

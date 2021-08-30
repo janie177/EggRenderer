@@ -8,6 +8,7 @@
 #include <glm/glm/glm.hpp>
 
 #include "ConcurrentRegistry.h"
+#include "GpuBuffer.h"
 #include "vk_mem_alloc.h"
 #include "RenderStage.h"
 #include "Resources.h"
@@ -40,6 +41,16 @@ namespace egg
 	};
 
 	/*
+	 * Data that gets uploaded every frame from the DrawData object.
+	 */
+	struct UploadData
+	{
+		GpuBuffer m_InstanceBuffer;		//The buffer containing instance data for this frame.
+		GpuBuffer m_IndirectionBuffer;	//Indices into the instance data buffer.
+		//TODO lights
+	};
+
+	/*
 	 * Struct containing all the resources needed for a single frame.
 	 */
 	struct Frame
@@ -50,6 +61,9 @@ namespace egg
 		VkCommandBuffer m_CommandBuffer;		//The graphics command buffer used for drawing and presenting.
 		VkCommandPool m_CommandPool;			//The command pool used to allocate commands for this frame.
 		VkImageView m_SwapchainView;			//The ImageView into the swapchain for this frame.
+
+		std::unique_ptr<DrawData> m_DrawData;	//The draw data uploaded for this frame.
+		UploadData m_UploadData;				//Contains information about the uploaded draw data for this frame.
 	};
 
 	/*
@@ -59,12 +73,13 @@ namespace egg
 	struct RenderData
 	{
 		RenderData() : m_VulkanInstance(nullptr),
-			m_PhysicalDevice(nullptr),
-			m_Device(nullptr),
-			m_Surface(nullptr),
-			m_Allocator(nullptr),
-		    m_Settings(),
-			m_ThreadPool(std::thread::hardware_concurrency())
+		               m_PhysicalDevice(nullptr),
+		               m_Device(nullptr),
+		               m_Surface(nullptr),
+		               m_Allocator(nullptr),
+		               m_Settings(),
+		               m_ThreadPool(std::thread::hardware_concurrency()),
+					   m_FrameCounter(0)
 		{
 		}
 
@@ -73,6 +88,7 @@ namespace egg
 		VkDevice m_Device;						//Logical device wrapping around physical GPU.
 		VkSurfaceKHR m_Surface;					//The output surface. In this case provided by GLFW.
 		VmaAllocator m_Allocator;				//External library handling memory management to keep this project a bit cleaner.
+		
 		std::vector<Frame> m_FrameData;			//Resources for each frame.
 
 		RendererSettings m_Settings;			//All settings for the renderer.
@@ -116,7 +132,7 @@ namespace egg
 	//Ovverriden from th EggRenderer API.
 	public:
 		bool Init(const RendererSettings& a_Settings) override;
-		bool DrawFrame(DrawData& a_DrawData) override;
+		bool DrawFrame(std::unique_ptr<EggDrawData>& a_DrawData) override;
 		bool Resize(bool a_FullScreen, std::uint32_t a_Width, std::uint32_t a_Height) override;
 		bool IsFullScreen() const override;
 		bool CleanUp() override;
@@ -128,10 +144,9 @@ namespace egg
 			CreateMeshes(const std::vector<MeshCreateInfo>& a_MeshCreateInfos) override;
 		std::shared_ptr<EggMesh> CreateMesh(const ShapeCreateInfo& a_ShapeCreateInfo) override;
 	    InputData QueryInput() override;
-        DynamicDrawCall CreateDynamicDrawCall(const std::shared_ptr<EggMesh>& a_Mesh,
-            const std::vector<MeshInstance>& a_Instances, const std::vector<std::shared_ptr<EggMaterial>>& a_Materials,
-            bool a_Transparent) override;
-	std::shared_ptr<EggMaterial> CreateMaterial(const MaterialCreateInfo& a_Info) override;
+		std::shared_ptr<EggMaterial> CreateMaterial(const MaterialCreateInfo& a_Info) override;
+		std::unique_ptr<EggDrawData> CreateDrawData() override;
+	
 	private:
 		template<typename T>
 		inline T* AddRenderStage(std::unique_ptr<T>&& a_Stage)
@@ -206,7 +221,7 @@ namespace egg
 			VkDebugUtilsMessageTypeFlagsEXT messageType,
 			const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 			void* pUserData);
- 
+
 	private:
 		/*
 		 * Global renderer tracking stuff.
@@ -238,7 +253,7 @@ namespace egg
 		VkFence m_CopyFence;
 		std::mutex m_CopyMutex;
 
-		std::uint32_t m_CurrentFrameIndex;		//The current frame index.
+		std::uint32_t m_SwapChainIndex;			//The current frame index in the swapchain.
 		VkSemaphore m_FrameReadySemaphore;		//This semaphore is signaled by the swapchain when it's ready for the next frame. 
 
 		/*

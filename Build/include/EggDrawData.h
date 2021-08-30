@@ -11,13 +11,7 @@
 #include "DrawDataBuilder.h"
 
 namespace egg
-{
-	class DrawData;
-	struct DrawCall;
-	struct PackedLightData;
-	union PackedInstanceData;
-	union PackedMaterialData;
-	
+{	
 	//Opaque handle types.
 	enum class MaterialHandle : uint32_t {};
 	enum class MeshHandle : uint32_t {};
@@ -31,9 +25,9 @@ namespace egg
 	 */
 	enum class DrawPassType
 	{
-		STATIC_DEFERRED_SHADING,	//This draw pass will draw static meshes in a deferred pass.
-		STATIC_FORWARD_SHADING,		//This draw pass will draw static meshes in a forward pass.
-		SHADOW_GENERATION			//This draw pass will affect shadow map generation (cast shadows).
+		STATIC_DEFERRED_SHADING =	1 << 0,		//This draw pass will draw static meshes in a deferred pass.
+		STATIC_FORWARD_SHADING =	1 << 1,		//This draw pass will draw static meshes in a forward pass.
+		SHADOW_GENERATION =			1 << 2		//This draw pass will affect shadow map generation (cast shadows).
 	};
 
 	inline DrawPassType operator |(DrawPassType& a_Lhs, DrawPassType& a_Rhs) { return static_cast<DrawPassType>(static_cast<int>(a_Lhs) | static_cast<int>(a_Rhs)); }
@@ -65,40 +59,39 @@ namespace egg
 	 * It contains all information for a single frame to be drawn.
 	 * When passed to the renderer, all contained state is consumed.
 	 */
-	struct DrawData
+	class EggDrawData
 	{
-		friend class Renderer;
-		friend class RenderStage_Deferred;
-
 	public:
+		virtual ~EggDrawData() = default;
+		
 		/*
 		 * Set the camera used for this frame.
 		 */
-		void SetCamera(const Camera& a_Camera);
+		virtual void SetCamera(const Camera& a_Camera) = 0;
 
 		/*
 		 * Add a directional light to the scene in this frame.
 		 * Returns a handle to the light.
 		 */
-		LightHandle AddLight(const DirectionalLight& a_Light);
+		virtual LightHandle AddLight(const DirectionalLight& a_Light) = 0;
 
 		/*
 		 * Add a spherical light to the scene in this frame.
 		 * Returns a handle to the light.
 		 */
-		LightHandle AddLight(const SphereLight& a_Light);
+		virtual LightHandle AddLight(const SphereLight& a_Light) = 0;
 
 		/*
 		 * Add a material to be used during this frame.
 		 * Returns a handle to the material that can be specified when adding instance data.
 		 */
-		MaterialHandle AddMaterial(const std::shared_ptr<EggMaterial>& a_Material);
+		virtual MaterialHandle AddMaterial(const std::shared_ptr<EggMaterial>& a_Material) = 0;
 
 		/*
 		 * Add a mesh to be used during this frame.
 		 * Returns a handle to the mesh that can be specified when creating draw calls.
 		 */
-		MeshHandle AddMesh(const std::shared_ptr<EggMesh>& a_Mesh);
+		virtual MeshHandle AddMesh(const std::shared_ptr<EggMesh>& a_Mesh) = 0;
 
 		/*
 		 * Add an instance's data to this frame.
@@ -109,7 +102,7 @@ namespace egg
 		 *
 		 * Returns a handle that can be provided to the AddDrawCall() function.
 		 */
-		InstanceDataHandle AddInstance(const glm::mat4& a_Transform, const MaterialHandle a_MaterialHandle, const uint32_t a_CustomId);
+		virtual InstanceDataHandle AddInstance(const glm::mat4& a_Transform, const MaterialHandle a_MaterialHandle, const uint32_t a_CustomId) = 0;
 
 		/*
 		 * Add a draw call to this frame.
@@ -122,7 +115,7 @@ namespace egg
 		 *
 		 * Returns a handle to the newly created draw call, which can be passed to the functions that add draw passes.
 		 */
-		DrawCallHandle AddDrawCall(MeshHandle a_MeshHandle, const InstanceDataHandle* a_Instances, uint32_t a_InstanceCount);
+		virtual DrawCallHandle AddDrawCall(MeshHandle a_MeshHandle, const InstanceDataHandle* a_Instances, uint32_t a_InstanceCount) = 0;
 
 		/*
 		 * Add a deferred shading draw pass.
@@ -134,7 +127,7 @@ namespace egg
 		 *
 		 * Returns a handle to the draw pass created.
 		 */
-		DrawPassHandle AddDeferredShadingDrawPass(const DrawCallHandle* a_DrawCalls, uint32_t a_NumDrawCalls);
+		virtual DrawPassHandle AddDeferredShadingDrawPass(const DrawCallHandle* a_DrawCalls, uint32_t a_NumDrawCalls) = 0;
 
 		/*
 		 * Add a shadow map generation draw pass.
@@ -146,88 +139,76 @@ namespace egg
 		 *
 		 * Returns a handle to the draw pass created.
 		 */
-		DrawPassHandle AddShadowDrawPass(const DrawCallHandle* a_DrawCalls, uint32_t a_NumDrawCalls, const LightHandle a_LightHandle);
+		virtual DrawPassHandle AddShadowDrawPass(const DrawCallHandle* a_DrawCalls, uint32_t a_NumDrawCalls, const LightHandle a_LightHandle) = 0;
 
 		/*
 		 * Get the amount of instances that have been added for this frame.
 		 */
-		uint32_t GetInstanceCount() const;
+		virtual uint32_t GetInstanceCount() const = 0;
 
 		/*
 		 * Get the amount of draw passes that have been added for this frame.
 		 */
-		uint32_t GetDrawPassCount() const;
+		virtual uint32_t GetDrawPassCount() const = 0;
 
 		/*
 		 * Get the amount of draw calls that have been added for this frame.
 		 */
-		uint32_t GetDrawCallCount() const;
+		virtual uint32_t GetDrawCallCount() const = 0;
 
 		/*
 		 * Get the amount of materials used by this frame.
 		 */
-		uint32_t GetMaterialCount() const;
+		virtual uint32_t GetMaterialCount() const = 0;
 
 		/*
 		 * Get the amount of meshes used by this frame.
 		 */
-		uint32_t GetMeshCount() const;
+		virtual uint32_t GetMeshCount() const = 0;
 
 		/*
 		 * Get the amount of lights used by this frame.
 		 */
-	    uint32_t GetLightCount() const;
-
-	private:
-		Camera m_Camera;											//Camera for this frame.
-		std::vector<std::shared_ptr<EggMaterial>> m_Materials;		//All materials used during this frame.
-		std::vector<uint32_t> m_MaterialGpuIndices;					//Material indices on the GPU corresponding to m_Materials.
-		std::vector<PackedLightData> m_PackedLightData;				//Lights used during this frame.
-		std::vector<std::shared_ptr<EggMesh>> m_Meshes;				//All meshes used during this frame.
-		std::vector<PackedInstanceData> m_PackedInstanceData;		//Buffer of instance data, ready for upload.
-		std::vector<uint32_t> m_IndirectionBuffer;					//Indirection buffer, contains indices into instance data.
-
-		std::vector<DrawCall> m_drawCalls;							//Draw calls for this frame.
-		std::vector<DrawPass> m_DrawPasses;							//Draw passes referring to the draw calls.
+		virtual uint32_t GetLightCount() const = 0;
 	};
 
 
 
-	void example_function()
-	{
-		//There's multiple types of light, each with a very simple implementation.
-		DirectionalLight light;
+	//void example_function()
+	//{
+	//	//There's multiple types of light, each with a very simple implementation.
+	//	DirectionalLight light;
 
-		struct SceneNode
-		{
-			std::shared_ptr<EggMesh> mesh;
-			std::shared_ptr<EggMaterial> material;
-			glm::mat4 transform;
-			uint32_t id = 0;
-		} my_scene_object;
+	//	struct SceneNode
+	//	{
+	//		std::shared_ptr<EggMesh> mesh;
+	//		std::shared_ptr<EggMaterial> material;
+	//		glm::mat4 transform;
+	//		uint32_t id = 0;
+	//	} my_scene_object;
 
-		//Draw data to be consumed by a frame.
-		DrawData drawData;
+	//	//Draw data to be consumed by a frame.
+	//	EggDrawData* drawData;
 
-		/*
-		 * Add the individual resources and retrieve handles for them.
-		 * Note: Manually avoid duplicate adding of the same resource for better performance.
-		 */
-		const auto lightRef = drawData.AddLight(light);
-		const auto meshRef = drawData.AddMesh(my_scene_object.mesh);
-		const auto materialRef = drawData.AddMaterial(my_scene_object.material);
-		const auto instanceRef = drawData.AddInstance(my_scene_object.transform, materialRef, my_scene_object.id);
+	//	/*
+	//	 * Add the individual resources and retrieve handles for them.
+	//	 * Note: Manually avoid duplicate adding of the same resource for better performance.
+	//	 */
+	//	const auto lightRef = drawData->AddLight(light);
+	//	const auto meshRef = drawData->AddMesh(my_scene_object.mesh);
+	//	const auto materialRef = drawData->AddMaterial(my_scene_object.material);
+	//	const auto instanceRef = drawData->AddInstance(my_scene_object.transform, materialRef, my_scene_object.id);
 
-		/*
-		 * Create a draw call that draws this one instance of the mesh.
-		 */
-		const auto drawCallRef = drawData.AddDrawCall(meshRef, &instanceRef, 1);
+	//	/*
+	//	 * Create a draw call that draws this one instance of the mesh.
+	//	 */
+	//	const auto drawCallRef = drawData->AddDrawCall(meshRef, &instanceRef, 1);
 
-		/*
-		 * Create a deferred draw pass that executes the draw call and shades it.
-		 * Also create a shadow pass for the same draw call which fills the shadow map for the light provided.
-		 */
-	    drawData.AddDeferredShadingDrawPass(&drawCallRef, 1);
-		drawData.AddShadowDrawPass(&drawCallRef, 1, lightRef);
-	}
+	//	/*
+	//	 * Create a deferred draw pass that executes the draw call and shades it.
+	//	 * Also create a shadow pass for the same draw call which fills the shadow map for the light provided.
+	//	 */
+	//    drawData->AddDeferredShadingDrawPass(&drawCallRef, 1);
+	//	drawData->AddShadowDrawPass(&drawCallRef, 1, lightRef);
+	//}
 }

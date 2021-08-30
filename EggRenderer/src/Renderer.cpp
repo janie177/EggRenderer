@@ -100,6 +100,21 @@ namespace egg
             return false;
         }
 
+        /*
+         * Create the per-frame data and initialize the upload buffers.
+         */
+        m_RenderData.m_FrameData.resize(m_RenderData.m_Settings.m_SwapBufferCount);
+        for (auto& frame : m_RenderData.m_FrameData)
+        {
+            //Create the upload data buffers.
+            frame.m_UploadData.m_IndirectionBuffer.Init(
+                GpuBufferSettings{ 0, 0, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT }
+            , m_RenderData.m_Device, m_RenderData.m_Allocator);
+            frame.m_UploadData.m_InstanceBuffer.Init(
+                GpuBufferSettings{ 0, 16, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT }
+            , m_RenderData.m_Device, m_RenderData.m_Allocator);
+        }
+
         //Swapchain used for presenting.
         if(!CreateSwapChain())
         {
@@ -237,62 +252,17 @@ namespace egg
 
         return m_InputQueue.GetQueuedEvents();
     }
-
-    DynamicDrawCall Renderer::CreateDynamicDrawCall(const std::shared_ptr<EggMesh>& a_Mesh,
-        const std::vector<MeshInstance>& a_Instances, const std::vector<std::shared_ptr<EggMaterial>>& a_Materials,
-        bool a_Transparent)
-    {
-        DynamicDrawCall drawCall;
-
-        drawCall.m_Mesh = a_Mesh;
-        drawCall.m_Transparent = a_Transparent;
-
-        for(auto & material : a_Materials)
-        {
-            drawCall.m_MaterialData.push_back({ material, m_RenderData.m_FrameCounter });
-        }
-
-        std::vector<uint32_t> matIds;
-        for (auto& material : a_Materials)
-        {
-            uint32_t id, used;
-            std::static_pointer_cast<Material>(material)->GetCurrentlyUsedGpuIndex(id, used);
-            matIds.push_back(id);
-        }
-
-        //If no materials were specified, use the default material.
-        if(matIds.empty())
-        {
-            uint32_t id, used;
-            std::static_pointer_cast<Material>(m_RenderData.m_DefaultMaterial)->GetCurrentlyUsedGpuIndex(id, used);
-            matIds.push_back(id);
-        }
-
-        drawCall.m_InstanceData.reserve(a_Instances.size());
-        drawCall.m_MaterialIndices.reserve(a_Instances.size());
-        for (auto& instance : a_Instances)
-        {
-            //First copy the entire transform.
-            PackedInstanceData data{ instance.m_Transform };
-
-            //Store the material ID.
-            assert(instance.m_MaterialIndex < matIds.size()&& "Invalid material index provided in mesh instance! Out of bounds.");
-            *reinterpret_cast<uint32_t*>(&(data.m_Transform[0][3])) = matIds[instance.m_MaterialIndex];
-
-            //Store custom data.
-            *reinterpret_cast<uint32_t*>(&(data.m_Transform[1][3])) = instance.m_CustomData;
-
-            drawCall.m_InstanceData.push_back(data);
-            drawCall.m_MaterialIndices.push_back(instance.m_MaterialIndex);
-        }
-        return drawCall;
-    }
-
+	
     std::shared_ptr<EggMaterial> Renderer::CreateMaterial(const MaterialCreateInfo& a_Info)
     {
-        auto material =  m_RenderData.m_MaterialManager.CreateMaterial(a_Info);
+        auto material = m_RenderData.m_MaterialManager.CreateMaterial(a_Info);
         material->MarkAsDirty();    //No need to lock mutex since only this function has access.
         return material;
+    }
+
+    std::unique_ptr<EggDrawData> Renderer::CreateDrawData()
+    {
+        return std::make_unique<DrawData>();
     }
 
     bool Renderer::CleanUp()
@@ -347,6 +317,10 @@ namespace egg
         {
             vkFreeCommandBuffers(m_RenderData.m_Device, frame.m_CommandPool, 1, &frame.m_CommandBuffer);
             vkDestroyCommandPool(m_RenderData.m_Device, frame.m_CommandPool, nullptr);
+
+        	//Destroy the upload buffers.
+            frame.m_UploadData.m_IndirectionBuffer.CleanUp();
+            frame.m_UploadData.m_InstanceBuffer.CleanUp();
         }
 
 	    //Clean the swapchain and associated frame buffers.
@@ -375,14 +349,14 @@ namespace egg
 	    m_SwapChain(nullptr),
 	    m_CopyBuffer(nullptr),
 	    m_CopyCommandPool(nullptr),
-	    m_CurrentFrameIndex(0),
+	    m_SwapChainIndex(0),
 	    m_FrameReadySemaphore(nullptr),
 	    m_HelloTriangleStage(nullptr),
-	    m_DeferredStage(nullptr)
+		m_DeferredStage(nullptr)
     {
     }
 
-    bool Renderer::DrawFrame(DrawData& a_DrawData)
+    bool Renderer::DrawFrame(std::unique_ptr<EggDrawData>& a_DrawData)
     {                        
         //Ensure that the renderer has been properly set-up.
         if (!m_Initialized)
@@ -413,26 +387,71 @@ namespace egg
             m_RenderData.m_MaterialManager.RemoveUnused(m_RenderData.m_FrameCounter, m_RenderData.m_Settings.m_SwapBufferCount + 1);
         }
 
+        //Nullptr draw data provided. Do nothing.
+        if (!a_DrawData)
+        {
+            return true;
+        }
+    	
+        //The frame data and command buffer for the current frame.
+        auto& frameData = m_RenderData.m_FrameData[m_SwapChainIndex];
+        auto& uploadData = frameData.m_UploadData;
+        auto& cmdBuffer = frameData.m_CommandBuffer;
+
+        /*
+		 * Take ownership of the draw data for this frame.
+		 */
+        std::unique_ptr<DrawData> ptr = std::unique_ptr<DrawData>(static_cast<DrawData*>(a_DrawData.release()));
+        frameData.m_DrawData = std::move(ptr);
+        auto& drawData = *frameData.m_DrawData;
+    	
         //Nothing to draw :(
-        if (a_DrawData.m_DynamicDrawCalls.empty())
+        if (drawData.GetDrawPassCount() == 0)
         {
             return true;
         }
 
         //Index when stuff was last uploaded.
         //This is mutex protected so it will never cause materials to get "stuck".
+    	//TODO overhaul material system.
         const auto lastUpdatedFrame = m_RenderData.m_MaterialManager.GetLastUpdatedFrame();
 
-        //Update resources used this frame.
-        for (auto& drawCall : a_DrawData.m_DynamicDrawCalls)
+        /*
+         * Update the resources linked in the DrawData object.
+         */
+        for (auto& material : drawData.m_Materials)
         {
-            //Update last use with the frame counter, and pass which frame materials last changed.
-            drawCall.Update(lastUpdatedFrame, m_RenderData.m_FrameCounter);
+            std::static_pointer_cast<Material>(material)->SetLastUsedFrame(m_RenderData.m_FrameCounter);
         }
+		for(auto& mesh : drawData.m_Meshes)
+		{
+            std::static_pointer_cast<Mesh>(mesh)->m_LastUsedFrameId = m_RenderData.m_FrameCounter;
+		}
 
+    	/*
+    	 * Upload the instance and indirection data to the GPU.
+    	 * This automatically resizes the buffers when needed.
+    	 */
+    	const auto requiredInstanceDataSize = drawData.m_PackedInstanceData.size() * sizeof(PackedInstanceData);
+        CPUWrite write{ drawData.m_PackedInstanceData.data(), 0, requiredInstanceDataSize};
+    	if(!uploadData.m_InstanceBuffer.Write(&write, 1, true))
+    	{
+            printf("Could not upload instance data!\n");
+            return false;
+    	}
+
+        const auto requiredIndirectionSize = drawData.m_IndirectionBuffer.size() * sizeof(uint32_t);
+        write = { drawData.m_IndirectionBuffer.data(), 0, requiredIndirectionSize };
+    	if(!uploadData.m_IndirectionBuffer.Write(&write, 1, true))
+    	{
+            printf("Could not upload indirection data!\n");
+            return false;
+    	}
+    	
         /*
          * Select materials to be re-uploaded.
          */
+    	//TODO redo material system
         m_RenderData.m_MaterialManager.PrepareForUpload();
 
         /*
@@ -441,6 +460,7 @@ namespace egg
          *
          * This runs on another thread to prevent stalls.
          */
+    	//TODO redo material system.
         auto frameIndex = m_RenderData.m_FrameCounter;
         m_RenderData.m_ThreadPool.enqueue([&, frameIndex]()
             {
@@ -454,10 +474,6 @@ namespace egg
         {
             return true;
         }
-
-        //The frame data for the current frame.
-        auto& frameData = m_RenderData.m_FrameData[m_CurrentFrameIndex];
-        auto& cmdBuffer = frameData.m_CommandBuffer;
 
         //Ensure that command buffer execution is done for this frame by waiting for fence completion.
         vkWaitForFences(m_RenderData.m_Device, 1, &frameData.m_Fence, true, std::numeric_limits<std::uint32_t>::max());
@@ -481,11 +497,6 @@ namespace egg
         std::vector<VkSemaphore> waitSemaphores;
         std::vector<VkSemaphore> signalSemaphores;
         std::vector<VkPipelineStageFlags> waitStageFlags;       //The stages the wait semaphores should wait before.
-
-        /*
-         * Setup data for each stage depending on what has been provided this frame.
-         */
-        m_DeferredStage->SetDrawData(a_DrawData);
 	    
         /*
          * Execute all the render stages.
@@ -495,7 +506,7 @@ namespace egg
 		    if(stage->IsEnabled())
 		    {
                 //These functions may add waiting dependencies to the semaphore vectors.
-                stage->RecordCommandBuffer(m_RenderData, cmdBuffer, m_CurrentFrameIndex, waitSemaphores, signalSemaphores, waitStageFlags);
+                stage->RecordCommandBuffer(m_RenderData, cmdBuffer, m_SwapChainIndex, waitSemaphores, signalSemaphores, waitStageFlags);
 		    }
 	    }
 
@@ -547,7 +558,7 @@ namespace egg
         presentInfo.pWaitSemaphores = &frameData.m_WaitForRenderSemaphore;  //Wait for the command buffer to stop executing before presenting.
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = &m_SwapChain;
-        presentInfo.pImageIndices = &m_CurrentFrameIndex;
+        presentInfo.pImageIndices = &m_SwapChainIndex;
         presentInfo.pResults = nullptr;
 
         if(vkQueuePresentKHR(queue.m_Queue, &presentInfo) != VK_SUCCESS)
@@ -561,7 +572,7 @@ namespace egg
          * The semaphore will be signaled as soon as the frame becomes available.
          * Remember it for the next frame, to be used with the queue submit command.
          */
-        if(vkAcquireNextImageKHR(m_RenderData.m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), frameData.m_WaitForFrameSemaphore, nullptr, &m_CurrentFrameIndex) != VK_SUCCESS)
+        if(vkAcquireNextImageKHR(m_RenderData.m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), frameData.m_WaitForFrameSemaphore, nullptr, &m_SwapChainIndex) != VK_SUCCESS)
         {
             printf("Could not get next image in swap chain!\n");
             return false;
@@ -1489,8 +1500,8 @@ namespace egg
     {
         //Assign the frame index to be 0
         m_FrameReadySemaphore = m_RenderData.m_FrameData[m_RenderData.m_Settings.m_SwapBufferCount - 1].m_WaitForFrameSemaphore;   //Semaphore for the frame before this is used.
-        vkAcquireNextImageKHR(m_RenderData.m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), m_FrameReadySemaphore, nullptr, &m_CurrentFrameIndex);
-        if (m_CurrentFrameIndex != 0)
+        vkAcquireNextImageKHR(m_RenderData.m_Device, m_SwapChain, std::numeric_limits<unsigned>::max(), m_FrameReadySemaphore, nullptr, &m_SwapChainIndex);
+        if (m_SwapChainIndex != 0)
         {
             printf("First frame index is not 0! This doesn't work with my setup.\n");
             return false;
@@ -1585,9 +1596,6 @@ namespace egg
             createInfo.subresourceRange.layerCount = 1;
         }
 
-        //Resize the render data vector to contain an entry for each frame.
-        m_RenderData.m_FrameData.resize(m_RenderData.m_Settings.m_SwapBufferCount);
-
         //Loop over each swapchain buffer, and create an image view for it.
         for (size_t i = 0; i < swapBuffers.size(); i++) 
         {
@@ -1610,7 +1618,6 @@ namespace egg
 	    for(int frameIndex = 0; frameIndex < m_RenderData.m_Settings.m_SwapBufferCount; ++frameIndex)
 	    {
             auto& frameData = m_RenderData.m_FrameData[frameIndex];
-            VkImageView attachments[] = { m_RenderData.m_FrameData[frameIndex].m_SwapchainView };    //image view corresponding with the swapchain index for this frame.
 
             VkFenceCreateInfo fenceInfo{};
             fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -1780,6 +1787,6 @@ namespace egg
 
         std::cout << "[Vulkan] [" << *severity << "] " << pCallbackData->pMessage << std::endl;
 
-    return VK_FALSE;
-}
+		return VK_FALSE;
+	}
 }
