@@ -53,7 +53,7 @@ namespace egg
         }
 
         VkDescriptorPoolSize poolSize{};
-        poolSize.descriptorCount = static_cast<uint32_t>(m_InstanceDatas.size());
+        poolSize.descriptorCount = 2 * static_cast<uint32_t>(m_InstanceDatas.size());
         poolSize.type = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 
         VkDescriptorPoolCreateInfo poolCreateInfo{};
@@ -71,16 +71,15 @@ namespace egg
         //Create a descriptor set for each instance buffer.
         for (uint32_t i = 0; i < static_cast<uint32_t>(m_InstanceDatas.size()); ++i)
         {
-            uint32_t index = static_cast<uint32_t>(m_InstanceDatas.size() - 1) - i;
             VkDescriptorSetAllocateInfo setAllocInfo{};
             setAllocInfo.descriptorPool = m_InstanceDescriptorPool;
             setAllocInfo.descriptorSetCount = 1;
             setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
             setAllocInfo.pSetLayouts = &m_InstanceDescriptorSetLayout;
 
-            if (vkAllocateDescriptorSets(a_RenderData.m_Device, &setAllocInfo, &m_InstanceDatas[index].m_InstanceDataDescriptorSet) != VK_SUCCESS)
+            if (vkAllocateDescriptorSets(a_RenderData.m_Device, &setAllocInfo, &m_InstanceDatas[i].m_InstanceDataDescriptorSet) != VK_SUCCESS)
             {
-                printf("Could not allocate instance data descriptor set for index %i in deferred stage.\n", index);
+                printf("Could not allocate instance data descriptor set for index %i in deferred stage.\n", i);
                 return false;
             }
         }

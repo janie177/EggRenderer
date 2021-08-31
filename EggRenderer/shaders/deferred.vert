@@ -24,8 +24,8 @@ layout( push_constant ) uniform PushData {
 
 struct InstanceData
 {
-    mat4x3 transform;   //The transform with 4 columns and 3 rows.
-    uvec4 customData;   //Four uints containing: material id(0), custom id(1)
+    mat4 transform;
+    uvec4 customData;
 };
 
 layout (std430, binding = 0) buffer IndirectionBuffer
@@ -46,12 +46,11 @@ void main()
     InstanceData instance = instanceBuffer.instances[indirectionBuffer.indices[gl_InstanceIndex]];
 
     //The material and mesh ID are stored in the matrix to save uploading bandwidth.
-    outMaterialId = instance.customData[0];    
-    outCustomId = instance.customData[1];
+    outMaterialId = instance.customData[0];   
+    outCustomId = instance.customData[1]; 
 
     outNormal = vec3(instance.transform * vec4(inNormal, 0.0));
-
-    vec4 pos = vec4(instance.transform * vec4(inPosition, 1.0), 1.0);
+    vec4 pos = instance.transform * vec4(inPosition, 1.0);
     outPosition = vec3(pos);
     outTangent = vec4(((instance.transform * vec4(inTangent.xyz, 0.f)).xyz), inTangent.w);
 

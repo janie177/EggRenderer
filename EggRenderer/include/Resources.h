@@ -108,19 +108,16 @@ namespace egg
      */
 	union PackedInstanceData
 	{
-		//Everything packed into a matrix.
-		glm::mat4 m_Data;
-
-		//Normally GLM matrices are column major, but I'll interpret them as row major instead.
+		//TODO try to pack everything in a mat4 in the future (last row is unused anyways).
 		struct
 		{
-			//4 columns 3 rows.
-			glm::mat4x3 m_Transform;
+			//Mat4x4 (4x3 would add padding)
+			glm::mat4 m_Transform;
 
 			//Last column as individual components.
 			union
 			{
-				glm::vec4 m_CustomData;
+				glm::uvec4 m_CustomData;
 				struct
 				{
 					uint32_t m_MaterialId;

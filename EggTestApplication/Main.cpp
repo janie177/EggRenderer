@@ -22,7 +22,7 @@ int main()
 
     RendererSettings settings;
     settings.debugFlags = DebugPrintFlags::ERROR | DebugPrintFlags::WARNING;
-    settings.vSync = true;
+    settings.vSync = false;
     settings.clearColor = glm::vec4(0.f, 0.5f, 0.9f, 1.f);
     settings.lockCursor = true;
     settings.m_SwapBufferCount = 3;
@@ -108,7 +108,7 @@ int main()
 
             for (auto& instance : planeInstances)
             {
-                instances.emplace_back(drawData->AddInstance(instance.transform, materials[instance.customId], instance.customId));
+                instances.emplace_back(drawData->AddInstance(instance.transform, materials[1], instance.customId));
             }
             for (auto& instance : meshInstances)
             {
@@ -116,8 +116,8 @@ int main()
             }
 
             //Creat the draw calls and define the passes for them.
-            auto planeDrawCall = drawData->AddDrawCall(meshes[0], instances.data(), planeInstances.size());
-            auto sphereDrawCall = drawData->AddDrawCall(meshes[1], &instances[1], NUM_SPHERE_INSTANCES);
+            auto planeDrawCall = drawData->AddDrawCall(meshes[1], instances.data(), planeInstances.size());
+            auto sphereDrawCall = drawData->AddDrawCall(meshes[0], &instances[1], NUM_SPHERE_INSTANCES);
             drawData->AddDeferredShadingDrawPass(&planeDrawCall, 1);
             drawData->AddDeferredShadingDrawPass(&sphereDrawCall, 1);
 
