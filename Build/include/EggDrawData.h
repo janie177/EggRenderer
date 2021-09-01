@@ -53,7 +53,7 @@ namespace egg
 		uint32_t m_LightHandle;					//If this is a shadow generation pass, this is the light it is generated for.
 		std::vector<uint32_t> m_DrawCalls;	//The handles to the draw calls used by this draw pass.
 	};
-	
+
 	/*
 	 * DrawData is provided to the Renderer.
 	 * It contains all information for a single frame to be drawn.

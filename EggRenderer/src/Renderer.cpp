@@ -12,6 +12,8 @@
 
 #include "MaterialManager.h"
 #include "vk_mem_alloc.h"
+
+#include "api/Profiler.h"
 #include "api/Timer.h"
 
 namespace egg
@@ -19,6 +21,8 @@ namespace egg
 
     bool Renderer::Init(const RendererSettings& a_Settings)
     {
+        PROFILING_START(Initialize_Renderer)
+
 	    if(m_Initialized)
 	    {
             printf("Cannot initialize renderer: already initialized!\n");
@@ -142,6 +146,8 @@ namespace egg
             printf("Could not acquire first frame index from swap chain!");
             return false;
         }
+
+        PROFILING_END(Initialize_Renderer, MILLIS, "")
 	    
         m_Initialized = true;
 	    return true;
@@ -149,6 +155,7 @@ namespace egg
 
     bool Renderer::Resize(bool a_FullScreen, std::uint32_t a_Width, std::uint32_t a_Height)
     {
+        PROFILING_START(Window_Resize)
 	    //If resizing to the same size, just don't do anything.
         if(a_Width == m_RenderData.m_Settings.resolutionX && a_Height == m_RenderData.m_Settings.resolutionY && a_FullScreen == m_RenderData.m_Settings.fullScreen)
         {
@@ -236,7 +243,9 @@ namespace egg
             printf("Could not acquire swap chain index for next frame during resize!\n");
             return false;
 	    }
-	    
+
+        PROFILING_END(Window_Resize, MILLIS, "")
+
         return true;
     }
 
@@ -267,6 +276,7 @@ namespace egg
 
     bool Renderer::CleanUp()
     {
+        PROFILING_START(Clean_Up_Renderer)
         if(!m_Initialized)
         {
             printf("Cannot cleanup renderer that was not initialized!\n");
@@ -338,7 +348,8 @@ namespace egg
         vkDestroyInstance(m_RenderData.m_VulkanInstance, nullptr);
 
         glfwDestroyWindow(m_Window);
-	    
+
+        PROFILING_END(Clean_Up_Renderer, MILLIS, "")
         return true;
     }
 
@@ -357,7 +368,8 @@ namespace egg
     }
 
     bool Renderer::DrawFrame(std::unique_ptr<EggDrawData>& a_DrawData)
-    {                        
+    {
+        PROFILING_START(Cpu_Frame_Building)
         //Ensure that the renderer has been properly set-up.
         if (!m_Initialized)
         {
@@ -432,6 +444,7 @@ namespace egg
     	 * Upload the instance and indirection data to the GPU.
     	 * This automatically resizes the buffers when needed.
     	 */
+        PROFILING_START(Upload_Instance_Data)
     	const auto requiredInstanceDataSize = drawData.m_PackedInstanceData.size() * sizeof(PackedInstanceData);
         CPUWrite write{ drawData.m_PackedInstanceData.data(), 0, requiredInstanceDataSize};
     	if(!uploadData.m_InstanceBuffer.Write(&write, 1, true))
@@ -447,6 +460,7 @@ namespace egg
             printf("Could not upload indirection data!\n");
             return false;
     	}
+        PROFILING_END(Upload_Instance_Data, MILLIS, "")
     	
         /*
          * Select materials to be re-uploaded.
@@ -581,6 +595,8 @@ namespace egg
 
 	    //Increment the frame index.
         ++m_RenderData.m_FrameCounter;
+
+        PROFILING_END(Cpu_Frame_Building, MILLIS, "")
 	    
 	    return true;
     }
@@ -599,6 +615,8 @@ namespace egg
 
     std::vector<std::shared_ptr<EggMesh>> Renderer::CreateMeshes(const std::vector<MeshCreateInfo>& a_MeshCreateInfos)
     {
+        PROFILING_START(Create_Meshes)
+
         //First lock this mutex so that no other thread can start accessing the upload.
         std::lock_guard<std::mutex> lock(m_CopyMutex);
 
@@ -742,6 +760,8 @@ namespace egg
             ++m_MeshCounter;
             meshes.push_back(ptr);
         }
+
+        PROFILING_END(Create_Meshes, MILLIS, "")
 
         return meshes;
     }

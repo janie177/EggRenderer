@@ -515,7 +515,7 @@ namespace egg
             //The depth state. Stencil is not used for now.
             VkPipelineDepthStencilStateCreateInfo depthStencilState{};
             depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-            depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+            depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS;
             depthStencilState.depthTestEnable = a_CreateInfo.depth.m_UseDepth;
             depthStencilState.depthWriteEnable = a_CreateInfo.depth.m_WriteDepth;
             depthStencilState.stencilTestEnable = false;

@@ -5,6 +5,7 @@
 #include "EggRenderer.h"
 #include "InputQueue.h"
 #include "Timer.h"
+#include "Profiler.h"
 
 struct MeshInstance
 {
@@ -95,6 +96,7 @@ int main()
             ++frameIndex;
         	
             //Build the draw calls and passes.
+            PROFILING_START(DrawData_Building)
             auto drawData = renderer->CreateDrawData();
 
             //Fill the draw data.
@@ -123,6 +125,7 @@ int main()
 
             //Set the camera.
             drawData->SetCamera(camera);
+            PROFILING_END(DrawData_Building, MILLIS, "")
 
             //Randomly change material color once in a while.
             if(frameIndex % 100 == 0)
