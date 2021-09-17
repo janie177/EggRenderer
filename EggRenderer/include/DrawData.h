@@ -33,13 +33,12 @@ namespace egg
 
 	private:
 		Camera m_Camera;											//Camera for this frame.
-		std::vector<std::shared_ptr<EggMaterial>> m_Materials;		//All materials used during this frame.
-		std::vector<uint32_t> m_MaterialGpuIndices;					//Material indices on the GPU corresponding to m_Materials.
+		std::vector<std::shared_ptr<EggMaterial>> m_Materials;		//Material handles used during this frame.
+		std::vector<PackedMaterialData> m_PackedMaterialData;		//All materials used during this frame.
 		std::vector<PackedLightData> m_PackedLightData;				//Lights used during this frame.
 		std::vector<std::shared_ptr<EggMesh>> m_Meshes;				//All meshes used during this frame.
 		std::vector<PackedInstanceData> m_PackedInstanceData;		//Buffer of instance data, ready for upload.
 		std::vector<uint32_t> m_IndirectionBuffer;					//Indirection buffer, contains indices into instance data.
-
 		std::vector<DrawCall> m_drawCalls;							//Draw calls for this frame.
 		std::vector<DrawPass> m_DrawPasses;							//Draw passes referring to the draw calls.
 	};

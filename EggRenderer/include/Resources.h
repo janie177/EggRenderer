@@ -1,18 +1,13 @@
 #pragma once
 #include <memory>
-#include <mutex>
-#include <vector>
 #include <glm/glm/glm.hpp>
 
-#include "api/Transform.h"
 #include "vk_mem_alloc.h"
-#include "api/Camera.h"
 #include "api/EggMesh.h"
 #include "api/EggMaterial.h"
 
 namespace egg
 {
-    class MaterialManager;
 	struct MaterialMemoryData;
 
     /*
@@ -24,10 +19,6 @@ namespace egg
 		friend class DynamicDrawCall;
 	public:
 		virtual ~Resource() = default;
-		Resource() : m_LastUsedFrameId(0) {}
-
-	protected:
-		uint32_t m_LastUsedFrameId;		//The frame index when this resource was used.
 	};
 
 	/*
@@ -36,15 +27,23 @@ namespace egg
 	class Mesh : public EggMesh, public Resource
 	{
 	public:
-		Mesh(uint32_t a_UniqueId, VmaAllocation a_Allocation, VkBuffer a_Buffer, std::uint64_t a_NumIndices, std::uint64_t a_NumVertices, size_t a_IndexBufferOffset, size_t a_VertexBufferOffset) :
+		Mesh(uint32_t a_UniqueId, VmaAllocator a_Allocator, VmaAllocation a_Allocation, VkBuffer a_Buffer, std::uint64_t a_NumIndices, std::uint64_t a_NumVertices, size_t a_IndexBufferOffset, size_t a_VertexBufferOffset) :
+			m_UniqueId(a_UniqueId),
+		    m_Allocator(a_Allocator),
 			m_Allocation(a_Allocation),
 			m_Buffer(a_Buffer),
 			m_IndexOffset(a_IndexBufferOffset),
 			m_VertexOffset(a_VertexBufferOffset),
 			m_NumIndices(a_NumIndices),
-			m_NumVertices(a_NumVertices),
-			m_UniqueId(a_UniqueId)
+			m_NumVertices(a_NumVertices)
 		{
+		}
+
+        //Free memory when destructed automatically.
+		//This means all buffers are OWNED by mesh. This only works because meshes are kept in a shared_ptr always.
+		~Mesh()
+		{
+			vmaDestroyBuffer(m_Allocator, m_Buffer, m_Allocation);
 		}
 
 		VkBuffer& GetBuffer() { return m_Buffer; }
@@ -62,6 +61,7 @@ namespace egg
 	private:
 		uint32_t m_UniqueId;			//The unique ID for this mesh that can be used for sorting and comparing.
 
+		VmaAllocator m_Allocator;		//The allocator used to create this object.
 		VmaAllocation m_Allocation;		//The memory allocation containing the buffer.
 		VkBuffer m_Buffer;				//The buffer containing the vertex and index buffers.
 
@@ -145,16 +145,8 @@ namespace egg
 	 */
 	class Material : public EggMaterial, public Resource, public std::enable_shared_from_this<Material>
 	{
-		friend class MaterialManager;
-		friend class Renderer;
     public:
-		Material(const MaterialCreateInfo& a_Info, MaterialManager& a_Manager);
-
-		/*
-		 * Mark this material and underlying allocations as used for a frame.
-		 */
-		void SetLastUsedFrame(const uint32_t a_FrameIndex);
-		
+		Material(const MaterialCreateInfo& a_Info);
         glm::vec3 GetAlbedoFactor() const override;
         void SetAlbedoFactor(const glm::vec3& a_Factor) override;
         glm::vec3 GetEmissiveFactor() const override;
@@ -171,22 +163,6 @@ namespace egg
 		 */
 		PackedMaterialData PackMaterialData() const;
 
-		/*
-		 * Get the index in the GPU material buffer that currently contains valid material data for this material.
-		 */
-		void GetCurrentlyUsedGpuIndex(uint32_t& a_Index, uint32_t& a_LastUpdatedFrame) const;
-
-		/*
-		 * Returns true if a value has been changed, and a re-upload is necessary.
-		 */
-		bool IsDirty() const;
-
-		/*
-		 * Mark this material as dirty.
-		 * This will force a re-upload of the data.
-		 */
-		void MarkAsDirty();
-
 	private:
 		//Material data.
 		float m_MetallicFactor;
@@ -194,16 +170,5 @@ namespace egg
 		glm::vec3 m_AlbedoFactor;
 		glm::vec3 m_EmissiveFactor;
 		std::shared_ptr<EggMaterialTextures> m_Textures;
-
-		//Link to the manager that this material belongs to.
-		MaterialManager* m_Manager;
-
-		//Keep track of when to re-upload.
-		bool m_DirtyFlag;
-		mutable std::mutex m_DirtyFlagMutex;
-
-		//Current and previous allocation to be safe when not yet done uploading.
-		std::shared_ptr<MaterialMemoryData> m_CurrentAllocation;
-		std::shared_ptr<MaterialMemoryData> m_PreviousAllocation;
     };
 }

@@ -19,11 +19,48 @@ namespace egg
 
     bool RenderStage_Deferred::Init(const RenderData& a_RenderData)
     {
-        m_InstanceDatas.resize(static_cast<size_t>(a_RenderData.m_Settings.m_SwapBufferCount));
         m_Frames.resize(a_RenderData.m_Settings.m_SwapBufferCount);
 
         constexpr auto DEFERRED_COLOR_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
         constexpr auto DEFERRED_DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
+
+        /*
+         * Material descriptor set and pool.
+         */
+        {
+            VkDescriptorSetLayoutBinding descriptorSetLayoutBinding{};
+            descriptorSetLayoutBinding.binding = 0;
+            descriptorSetLayoutBinding.descriptorCount = 1;
+            descriptorSetLayoutBinding.descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            descriptorSetLayoutBinding.stageFlags = VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT;
+
+            VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo{};
+            descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            descriptorSetLayoutCreateInfo.bindingCount = 1;
+            descriptorSetLayoutCreateInfo.pBindings = &descriptorSetLayoutBinding;
+
+            if (vkCreateDescriptorSetLayout(a_RenderData.m_Device, &descriptorSetLayoutCreateInfo, nullptr, &m_MaterialDescriptorSetLayout) != VK_SUCCESS)
+            {
+                printf("Could not create descriptor set layout in material manager!\n");
+                return false;
+            }
+
+            VkDescriptorPoolSize poolSize{};
+            poolSize.descriptorCount = 1;
+            poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+
+            VkDescriptorPoolCreateInfo descriptorPoolInfo{};
+            descriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+            descriptorPoolInfo.maxSets = m_Frames.size();
+            descriptorPoolInfo.poolSizeCount = 1;
+            descriptorPoolInfo.pPoolSizes = &poolSize;
+
+            if (vkCreateDescriptorPool(a_RenderData.m_Device, &descriptorPoolInfo, nullptr, &m_MaterialDescriptorPool) != VK_SUCCESS)
+            {
+                printf("Could not create descriptor pool in material manager!\n");
+                return false;
+            }
+        }
 
         /*
          * Create the descriptor pool and set layout for the instance data buffers.
@@ -53,12 +90,12 @@ namespace egg
         }
 
         VkDescriptorPoolSize poolSize{};
-        poolSize.descriptorCount = 2 * static_cast<uint32_t>(m_InstanceDatas.size());
+        poolSize.descriptorCount = 2 * static_cast<uint32_t>(m_Frames.size());
         poolSize.type = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 
         VkDescriptorPoolCreateInfo poolCreateInfo{};
         poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolCreateInfo.maxSets = static_cast<uint32_t>(m_InstanceDatas.size());
+        poolCreateInfo.maxSets = static_cast<uint32_t>(m_Frames.size());
         poolCreateInfo.poolSizeCount = 1;
         poolCreateInfo.pPoolSizes = &poolSize;
 
@@ -69,7 +106,7 @@ namespace egg
         }
 
         //Create a descriptor set for each instance buffer.
-        for (uint32_t i = 0; i < static_cast<uint32_t>(m_InstanceDatas.size()); ++i)
+        for (uint32_t i = 0; i < static_cast<uint32_t>(m_Frames.size()); ++i)
         {
             VkDescriptorSetAllocateInfo setAllocInfo{};
             setAllocInfo.descriptorPool = m_InstanceDescriptorPool;
@@ -77,11 +114,25 @@ namespace egg
             setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
             setAllocInfo.pSetLayouts = &m_InstanceDescriptorSetLayout;
 
-            if (vkAllocateDescriptorSets(a_RenderData.m_Device, &setAllocInfo, &m_InstanceDatas[i].m_InstanceDataDescriptorSet) != VK_SUCCESS)
+            if (vkAllocateDescriptorSets(a_RenderData.m_Device, &setAllocInfo, &m_Frames[i].m_InstanceDataDescriptorSet) != VK_SUCCESS)
             {
                 printf("Could not allocate instance data descriptor set for index %i in deferred stage.\n", i);
                 return false;
             }
+
+            //Material data buffer descriptor set.
+            VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
+            descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            descriptorSetAllocateInfo.descriptorSetCount = 1;
+            descriptorSetAllocateInfo.descriptorPool = m_MaterialDescriptorPool;
+            descriptorSetAllocateInfo.pSetLayouts = &m_MaterialDescriptorSetLayout;
+
+            if (vkAllocateDescriptorSets(a_RenderData.m_Device, &descriptorSetAllocateInfo, &m_Frames[i].m_MaterialDataDescriptorSet) != VK_SUCCESS)
+            {
+                printf("Could not create descriptor set in material manager!\n");
+                return false;
+            }
+            
         }
 
         //Ensure that the format is supported as color attachment.
@@ -402,7 +453,7 @@ namespace egg
             pipelineInfo.depth.m_UseDepth = false;          //This is just shading so no need to use depth.
             pipelineInfo.depth.m_WriteDepth = false;
             pipelineInfo.descriptors.m_Layouts.push_back(m_ProcessingDescriptorSetLayout);
-            pipelineInfo.descriptors.m_Layouts.push_back(a_RenderData.m_MaterialManager.GetSetLayout());
+            pipelineInfo.descriptors.m_Layouts.push_back(m_MaterialDescriptorSetLayout);
             pipelineInfo.attachments.m_NumAttachments = DEFERRED_ATTACHMENT_MAX_ENUM + 1;
             pipelineInfo.pushConstants.m_PushConstantRanges.push_back({ VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(DeferredProcessingPushConstants) });
 
@@ -446,6 +497,10 @@ namespace egg
         //Destroy the descriptor set layout and pool for the instance data.
         vkDestroyDescriptorPool(a_RenderData.m_Device, m_InstanceDescriptorPool, nullptr);
         vkDestroyDescriptorSetLayout(a_RenderData.m_Device, m_InstanceDescriptorSetLayout, nullptr);
+
+        //Materials
+        vkDestroyDescriptorPool(a_RenderData.m_Device, m_MaterialDescriptorPool, nullptr);
+        vkDestroyDescriptorSetLayout(a_RenderData.m_Device, m_MaterialDescriptorSetLayout, nullptr);
 
     	//Pipelines!
         vkDestroyPipeline(a_RenderData.m_Device, m_DeferredPipelineData.m_Pipeline, nullptr);
@@ -493,7 +548,7 @@ namespace egg
          * Uploading data for the next frame.
          */
         auto& frame = a_RenderData.m_FrameData[a_CurrentFrameIndex];
-        auto& currentInstanceData = m_InstanceDatas[a_CurrentFrameIndex];
+        auto& frameData = m_Frames[a_CurrentFrameIndex];
 
 		//Update the descriptor set to point to the instance data and indirection buffer.
         VkDescriptorBufferInfo descriptorBufferInfo[2]{};
@@ -514,18 +569,34 @@ namespace egg
         setWrite[0].descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         setWrite[0].dstBinding = 0;
         setWrite[0].dstArrayElement = 0;
-        setWrite[0].dstSet = currentInstanceData.m_InstanceDataDescriptorSet;
+        setWrite[0].dstSet = frameData.m_InstanceDataDescriptorSet;
         setWrite[0].pBufferInfo = &descriptorBufferInfo[0];
         setWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         setWrite[1].descriptorCount = 1;
         setWrite[1].descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         setWrite[1].dstBinding = 1;
         setWrite[1].dstArrayElement = 0;
-        setWrite[1].dstSet = currentInstanceData.m_InstanceDataDescriptorSet;
+        setWrite[1].dstSet = frameData.m_InstanceDataDescriptorSet;
         setWrite[1].pBufferInfo = &descriptorBufferInfo[1];
 
     	//Do two writes within the set: instance and indirection data.
         vkUpdateDescriptorSets(a_RenderData.m_Device, 2, &setWrite[0], 0, nullptr);
+
+
+        //Set the current frame's material data descriptor set to point to the right buffer.
+        VkDescriptorBufferInfo materialDescriptorBufferInfo{};
+        materialDescriptorBufferInfo.offset = 0;
+        materialDescriptorBufferInfo.range = VK_WHOLE_SIZE;
+        materialDescriptorBufferInfo.buffer = frame.m_UploadData.m_MaterialBuffer.GetBuffer();
+        VkWriteDescriptorSet materialWriteDescriptorSet{};
+        materialWriteDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        materialWriteDescriptorSet.descriptorCount = 1;
+        materialWriteDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        materialWriteDescriptorSet.dstArrayElement = 0;
+        materialWriteDescriptorSet.dstBinding = 0;
+        materialWriteDescriptorSet.dstSet = frameData.m_MaterialDataDescriptorSet;
+        materialWriteDescriptorSet.pBufferInfo = &materialDescriptorBufferInfo;
+        vkUpdateDescriptorSets(a_RenderData.m_Device, 1, &materialWriteDescriptorSet, 0, nullptr);
 
     	
         /*
@@ -536,7 +607,7 @@ namespace egg
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = m_DeferredRenderPass;
-        renderPassInfo.framebuffer = m_Frames[a_CurrentFrameIndex].m_DeferredBuffer;
+        renderPassInfo.framebuffer = frameData.m_DeferredBuffer;
         renderPassInfo.renderArea.offset = { 0, 0 };
         renderPassInfo.renderArea.extent = { a_RenderData.m_Settings.resolutionX, a_RenderData.m_Settings.resolutionY };
         VkClearValue clearColor = {
@@ -566,7 +637,7 @@ namespace egg
             0, sizeof(DeferredPushConstants), &pushData);
 
         vkCmdBindDescriptorSets(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineData.m_PipelineLayout,
-            0, 1, &currentInstanceData.m_InstanceDataDescriptorSet, 0, nullptr);
+            0, 1, &frameData.m_InstanceDataDescriptorSet, 0, nullptr);
 
         for (auto& drawPass : drawData.m_DrawPasses)
         {
@@ -603,7 +674,7 @@ namespace egg
         vkCmdBindPipeline(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredProcessingPipelineData.m_Pipeline);
 
         //Bind the descriptor set that handles G-Buffer input.
-        VkDescriptorSet sets[2]{ m_Frames[a_CurrentFrameIndex].m_DescriptorSet, a_RenderData.m_MaterialManager.GetDescriptorSet()};
+        VkDescriptorSet sets[2]{ frameData.m_DescriptorSet, frameData.m_MaterialDataDescriptorSet};
         vkCmdBindDescriptorSets(a_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredProcessingPipelineData.m_PipelineLayout, 0, 2, sets, 0, nullptr);
 
         DeferredProcessingPushConstants processingPushData;

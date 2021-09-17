@@ -1,5 +1,6 @@
 #include "Renderer.h"
 
+#include <iostream>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -9,8 +10,6 @@
 #include <filesystem>
 #include <set>
 #include <glm/glm/glm.hpp>
-
-#include "MaterialManager.h"
 #include "vk_mem_alloc.h"
 
 #include "api/Profiler.h"
@@ -115,6 +114,9 @@ namespace egg
                 GpuBufferSettings{ 0, 0, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT }
             , m_RenderData.m_Device, m_RenderData.m_Allocator);
             frame.m_UploadData.m_InstanceBuffer.Init(
+                GpuBufferSettings{ 0, 16, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT }
+            , m_RenderData.m_Device, m_RenderData.m_Allocator);
+            frame.m_UploadData.m_MaterialBuffer.Init(
                 GpuBufferSettings{ 0, 16, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT }
             , m_RenderData.m_Device, m_RenderData.m_Allocator);
         }
@@ -264,9 +266,7 @@ namespace egg
 	
     std::shared_ptr<EggMaterial> Renderer::CreateMaterial(const MaterialCreateInfo& a_Info)
     {
-        auto material = m_RenderData.m_MaterialManager.CreateMaterial(a_Info);
-        material->MarkAsDirty();    //No need to lock mutex since only this function has access.
-        return material;
+        return std::make_shared<Material>(a_Info);
     }
 
     std::unique_ptr<EggDrawData> Renderer::CreateDrawData()
@@ -301,18 +301,6 @@ namespace egg
             stage->WaitForIdle(m_RenderData);
         }
 
-        //Wait for material uploading to end.
-        m_RenderData.m_MaterialManager.WaitForIdle(m_RenderData);
-
-        //Clean up the material system.
-        m_RenderData.m_MaterialManager.CleanUp(m_RenderData);
-
-	    //Unload all meshes.
-        m_Meshes.RemoveAll([&](Mesh& a_Mesh)
-        {
-		    vmaDestroyBuffer(m_RenderData.m_Allocator, a_Mesh.GetBuffer(), a_Mesh.GetAllocation());
-        });
-
 	    /*
 	     * Clean up the render stages.
 	     * This happens in reverse order.
@@ -331,6 +319,10 @@ namespace egg
         	//Destroy the upload buffers.
             frame.m_UploadData.m_IndirectionBuffer.CleanUp();
             frame.m_UploadData.m_InstanceBuffer.CleanUp();
+            frame.m_UploadData.m_MaterialBuffer.CleanUp();
+
+            //Free any data that could be kept alive at this point.
+            frame.m_DrawData.reset();
         }
 
 	    //Clean the swapchain and associated frame buffers.
@@ -377,28 +369,6 @@ namespace egg
             return false;
         }
 
-        /*
-         * Clean up old resources once in a while.
-         */
-        if (m_RenderData.m_FrameCounter % m_RenderData.m_Settings.cleanUpInterval == 0)
-        {
-            m_Meshes.RemoveUnused(
-                [&](Mesh& a_Mesh) -> bool
-                {
-                    //If the resource has not been used in the last full swap-chain cylce, it's not in flight.
-                    if (m_RenderData.m_FrameCounter - a_Mesh.m_LastUsedFrameId > m_RenderData.m_Settings.m_SwapBufferCount + 1)
-                    {
-                        vmaDestroyBuffer(m_RenderData.m_Allocator, a_Mesh.GetBuffer(), a_Mesh.GetAllocation());
-                        return true;
-                    }
-                    return false;
-                }
-            );
-
-            //Clean up old materials.
-            m_RenderData.m_MaterialManager.RemoveUnused(m_RenderData.m_FrameCounter, m_RenderData.m_Settings.m_SwapBufferCount + 1);
-        }
-
         //Nullptr draw data provided. Do nothing.
         if (!a_DrawData)
         {
@@ -423,28 +393,12 @@ namespace egg
             return true;
         }
 
-        //Index when stuff was last uploaded.
-        //This is mutex protected so it will never cause materials to get "stuck".
-    	//TODO overhaul material system.
-        const auto lastUpdatedFrame = m_RenderData.m_MaterialManager.GetLastUpdatedFrame();
-
-        /*
-         * Update the resources linked in the DrawData object.
-         */
-        for (auto& material : drawData.m_Materials)
-        {
-            std::static_pointer_cast<Material>(material)->SetLastUsedFrame(m_RenderData.m_FrameCounter);
-        }
-		for(auto& mesh : drawData.m_Meshes)
-		{
-            std::static_pointer_cast<Mesh>(mesh)->m_LastUsedFrameId = m_RenderData.m_FrameCounter;
-		}
-
     	/*
-    	 * Upload the instance and indirection data to the GPU.
+    	 * Upload all per-frame data to the GPU.
+    	 * Instances, materials, indirection buffer etc.
     	 * This automatically resizes the buffers when needed.
     	 */
-        PROFILING_START(Upload_Instance_Data)
+        PROFILING_START(Upload_Frame_Data)
     	const auto requiredInstanceDataSize = drawData.m_PackedInstanceData.size() * sizeof(PackedInstanceData);
         CPUWrite write{ drawData.m_PackedInstanceData.data(), 0, requiredInstanceDataSize};
     	if(!uploadData.m_InstanceBuffer.Write(&write, 1, true))
@@ -453,6 +407,14 @@ namespace egg
             return false;
     	}
 
+        const auto requiredMaterialDataSize = drawData.m_PackedMaterialData.size() * sizeof(PackedMaterialData);
+        write = { drawData.m_PackedMaterialData.data(), 0, requiredMaterialDataSize };
+        if (!uploadData.m_MaterialBuffer.Write(&write, 1, true))
+        {
+            printf("Could not upload material data!\n");
+            return false;
+        }
+
         const auto requiredIndirectionSize = drawData.m_IndirectionBuffer.size() * sizeof(uint32_t);
         write = { drawData.m_IndirectionBuffer.data(), 0, requiredIndirectionSize };
     	if(!uploadData.m_IndirectionBuffer.Write(&write, 1, true))
@@ -460,27 +422,7 @@ namespace egg
             printf("Could not upload indirection data!\n");
             return false;
     	}
-        PROFILING_END(Upload_Instance_Data, MILLIS, "")
-    	
-        /*
-         * Select materials to be re-uploaded.
-         */
-    	//TODO redo material system
-        m_RenderData.m_MaterialManager.PrepareForUpload();
-
-        /*
-         * Any materials marked as dirty that are ready will be re-uploaded.
-         * If this upload does not finish before the drawing, the old material data is automatically used instead.
-         *
-         * This runs on another thread to prevent stalls.
-         */
-    	//TODO redo material system.
-        auto frameIndex = m_RenderData.m_FrameCounter;
-        m_RenderData.m_ThreadPool.enqueue([&, frameIndex]()
-            {
-                m_RenderData.m_MaterialManager.UploadData(m_RenderData, frameIndex);
-            });
-        
+        PROFILING_END(Upload_Frame_Data, MILLIS, "")
 
         //Only draw when the window is not minimized.
         const bool minimized = glfwGetWindowAttrib(m_Window, GLFW_ICONIFIED);
@@ -754,9 +696,7 @@ namespace egg
             vmaDestroyBuffer(m_RenderData.m_Allocator, stagingBuffer, stagingBufferAllocation);
 
             //Finally create a shared pointer and return a copy of it after putting it in the registry.
-            auto ptr = std::make_shared<Mesh>(m_MeshCounter, allocation, buffer, info.m_NumIndices, info.m_NumVertices, indexOffset, vertexOffset);
-            m_Meshes.Add(ptr);
-
+            auto ptr = std::make_shared<Mesh>(m_MeshCounter, m_RenderData.m_Allocator, allocation, buffer, info.m_NumIndices, info.m_NumVertices, indexOffset, vertexOffset);
             ++m_MeshCounter;
             meshes.push_back(ptr);
         }
@@ -1682,23 +1622,6 @@ namespace egg
         //Assign the queues used for the main pipeline.
         m_RenderData.m_MeshUploadQueue = &(!m_RenderData.m_TransferQueues.empty() ? m_RenderData.m_TransferQueues[0] : m_RenderData.m_GraphicsQueues[m_RenderData.m_GraphicsQueues.size() - 1]);
         m_RenderData.m_PresentQueue = &m_RenderData.m_GraphicsQueues[0];
-
-        //Initialize the material system.
-        if (!m_RenderData.m_MaterialManager.Init(m_RenderData))
-        {
-            printf("Could not init material manager!\n");
-            return false;
-        }
-
-        //Create a default material to use when none are specified.
-        m_RenderData.m_DefaultMaterial = m_RenderData.m_MaterialManager.CreateMaterial(MaterialCreateInfo{
-            glm::vec3(1.f, 1.f, 1.f),
-            glm::vec3(0.f, 0.f, 0.f),
-            0.f,
-            1.f,
-            nullptr //TODO create default texture.
-            });
-
 
         /*
          * Setup the copy command buffer and pool.

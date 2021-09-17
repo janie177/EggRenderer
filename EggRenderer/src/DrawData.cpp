@@ -28,14 +28,11 @@ namespace egg
 
     MaterialHandle DrawData::AddMaterial(const std::shared_ptr<EggMaterial>& a_Material)
     {
+        //Keep a reference alive and also tightly pack the data for uploading.
         m_Materials.push_back(a_Material);
+        m_PackedMaterialData.push_back(std::static_pointer_cast<Material>(a_Material)->PackMaterialData());
 
-        //TODO change material system to not change index constantly.
-        auto gpuIndex = 0u, frame = 0u;
-        std::static_pointer_cast<Material>(a_Material)->GetCurrentlyUsedGpuIndex(gpuIndex, frame);
-        m_MaterialGpuIndices.push_back(gpuIndex);
-
-        return static_cast<MaterialHandle>(m_Materials.size() - 1);
+        return static_cast<MaterialHandle>(m_PackedMaterialData.size() - 1);
     }
 
     MeshHandle DrawData::AddMesh(const std::shared_ptr<EggMesh>& a_Mesh)
@@ -48,12 +45,12 @@ namespace egg
         const uint32_t a_CustomId)
     {
         //Ensure that the material handle is valid.
-        assert(static_cast<uint32_t>(a_MaterialHandle) < m_MaterialGpuIndices.size() && "Material handle referes to a material that was not added!");
+        assert(static_cast<uint32_t>(a_MaterialHandle) < m_PackedMaterialData.size() && "Material handle referes to a material that was not added!");
 
         auto& instance = m_PackedInstanceData.emplace_back();
 
         instance.m_Transform = a_Transform;
-        instance.m_MaterialId = m_MaterialGpuIndices[static_cast<uint32_t>(a_MaterialHandle)];
+        instance.m_MaterialId = static_cast<uint32_t>(a_MaterialHandle);
         instance.m_CustomId = a_CustomId;
         
         return static_cast<InstanceDataHandle>(m_PackedInstanceData.size() - 1);

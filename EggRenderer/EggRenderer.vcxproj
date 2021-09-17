@@ -347,7 +347,6 @@ xcopy "$(ProjectDir)shaders\output" "$(SolutionDir)Build\shaders\"  /E /Y /I</Co
     <ClCompile Include="src\GpuBuffer.cpp" />
     <ClCompile Include="src\InputQueue.cpp" />
     <ClCompile Include="src\Material.cpp" />
-    <ClCompile Include="src\MaterialManager.cpp" />
     <ClCompile Include="src\Renderer.cpp" />
     <ClCompile Include="src\RenderStage_Deferred.cpp" />
     <ClCompile Include="src\RenderStage_HelloTriangle.cpp" />
@@ -369,7 +368,6 @@ xcopy "$(ProjectDir)shaders\output" "$(SolutionDir)Build\shaders\"  /E /Y /I</Co
     <ClInclude Include="include\api\InputQueue.h" />
     <ClInclude Include="include\DrawData.h" />
     <ClInclude Include="include\GpuBuffer.h" />
-    <ClInclude Include="include\MaterialManager.h" />
     <ClInclude Include="include\Renderer.h" />
     <ClInclude Include="include\RenderStage.h" />
     <ClInclude Include="include\RenderUtility.h" />

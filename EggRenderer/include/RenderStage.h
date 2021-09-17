@@ -154,12 +154,6 @@ namespace egg
 			DEFERRED_ATTACHMENT_MAX_ENUM
 		};
 
-		struct InstanceData
-		{
-			//Instance data descriptor set pointing to the instance data buffer.
-			VkDescriptorSet m_InstanceDataDescriptorSet;
-		};
-
 		/*
 		 * Storage for the attachments for the deferred stage.
 		 */
@@ -175,6 +169,12 @@ namespace egg
 			//The framebuffer used to render to the deferred 2d image array.
 			VkFramebuffer m_DeferredBuffer;
 			VkDescriptorSet m_DescriptorSet;
+
+			//Instance data descriptor set pointing to the instance data buffer.
+			VkDescriptorSet m_InstanceDataDescriptorSet;
+
+			//Descriptor set to access materials.
+			VkDescriptorSet m_MaterialDataDescriptorSet;
 		};
 
 		//Descriptor pool and set for the deferred processing.
@@ -185,10 +185,11 @@ namespace egg
 		VkDescriptorPool m_InstanceDescriptorPool;
 		VkDescriptorSetLayout m_InstanceDescriptorSetLayout;
 
+		//Material descriptor set and pool.
+		VkDescriptorPool m_MaterialDescriptorPool;
+		VkDescriptorSetLayout m_MaterialDescriptorSetLayout;
+
 		//Separate buffers for each frame.
 		std::vector<DeferredFrame> m_Frames;
-
-		//Accessors for the instance data buffers.
-		std::vector<InstanceData> m_InstanceDatas;
 	};
 }

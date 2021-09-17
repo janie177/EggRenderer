@@ -1,8 +1,5 @@
 #pragma once
-#include <vulkan/vulkan.h>
-#include <cinttypes>
 #include <filesystem>
-#include <iostream>
 #include <vector>
 #include <GLFW/glfw3.h>
 #include <glm/glm/glm.hpp>
@@ -14,13 +11,10 @@
 #include "Resources.h"
 #include "api/EggRenderer.h"
 #include "api/InputQueue.h"
-#include "MaterialManager.h"
 #include "ThreadPool.h"
 
 namespace egg
 {
-
-
 	enum class QueueType
 	{
 		QUEUE_TYPE_GRAPHICS = 0,
@@ -47,7 +41,7 @@ namespace egg
 	{
 		GpuBuffer m_InstanceBuffer;		//The buffer containing instance data for this frame.
 		GpuBuffer m_IndirectionBuffer;	//Indices into the instance data buffer.
-		//TODO lights
+		GpuBuffer m_MaterialBuffer;		//Buffer containing the materials used for this frame.
 	};
 
 	/*
@@ -109,12 +103,6 @@ namespace egg
 
 		//Pool of threads for async tasks. Mutable because functions are not const.
 		mutable ThreadPool m_ThreadPool;
-
-		/*
-         * Material stuff.
-         */
-		MaterialManager m_MaterialManager;
-		std::shared_ptr<EggMaterial> m_DefaultMaterial;
 
 		//The index of the current frame. Used to track resource usage.
 		//Incremented by one after each frame.
@@ -266,10 +254,5 @@ namespace egg
 		 */
 		RenderStage_HelloTriangle* m_HelloTriangleStage;	//The hello world triangle for testing.
 		RenderStage_Deferred* m_DeferredStage;				//The deferred render pass.
-
-		/*
-		 * Dynamic Vulkan objects directly related to rendering.
-		 */
-		ConcurrentRegistry<Mesh> m_Meshes;		//Vector of all the meshes loaded. If ref count reaches 1, free.
 	};
 }
