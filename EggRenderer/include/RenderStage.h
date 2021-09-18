@@ -168,26 +168,16 @@ namespace egg
 
 			//The framebuffer used to render to the deferred 2d image array.
 			VkFramebuffer m_DeferredBuffer;
-			VkDescriptorSet m_DescriptorSet;
-
-			//Instance data descriptor set pointing to the instance data buffer.
-			VkDescriptorSet m_InstanceDataDescriptorSet;
-
-			//Descriptor set to access materials.
-			VkDescriptorSet m_MaterialDataDescriptorSet;
 		};
 
 		//Descriptor pool and set for the deferred processing.
-		VkDescriptorPool m_ProcessingDescriptorPool;
-		VkDescriptorSetLayout m_ProcessingDescriptorSetLayout;
+		DescriptorSetContainer m_ProcessingDescriptors;
 
 		//Descriptor pool and set layout for the instance data.
-		VkDescriptorPool m_InstanceDescriptorPool;
-		VkDescriptorSetLayout m_InstanceDescriptorSetLayout;
+		DescriptorSetContainer m_InstanceDescriptors;
 
-		//Material descriptor set and pool.
-		VkDescriptorPool m_MaterialDescriptorPool;
-		VkDescriptorSetLayout m_MaterialDescriptorSetLayout;
+		//Descriptor sets that are used for shading (per frame data buffers).
+		DescriptorSetContainer m_ShadingDescriptors;
 
 		//Separate buffers for each frame.
 		std::vector<DeferredFrame> m_Frames;

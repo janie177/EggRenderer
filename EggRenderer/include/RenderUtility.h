@@ -3,6 +3,7 @@
 #include <vector>
 #include <vulkan/vulkan_core.h>
 #include <fstream>
+#include <map>
 
 #include "vk_mem_alloc.h"
 
@@ -217,11 +218,150 @@ namespace egg
     };
 
     /*
+     * Contains descriptor sets and a layout + pool.
+     */
+    struct DescriptorSetContainer
+    {
+        //All descriptor currently residing in the pool with given layout.
+        std::vector<VkDescriptorSet> m_Sets;
+        VkDescriptorSetLayout m_Layout;
+        VkDescriptorPool m_Pool;
+    };
+
+    /*
+     * Information to create some descriptor sets.
+     */
+    struct DescriptorSetContainerCreateInfo
+    {
+        //The amount of sets to create.
+        uint32_t m_NumSets = 0;
+
+        //A vector of all the bindings the sets will have.
+        std::vector<VkDescriptorSetLayoutBinding> m_Bindings;
+
+        /*
+         * Helper function to create a new instance.
+         */
+        static DescriptorSetContainerCreateInfo Create(uint32_t a_NumSets)
+        {
+            return DescriptorSetContainerCreateInfo{ a_NumSets };
+        }
+
+        /*
+         * Helper function to build up bindings.
+         */
+        DescriptorSetContainerCreateInfo& AddBinding(uint32_t a_BindingIndex,
+            uint32_t a_DescriptorCount,
+            VkDescriptorType a_DescriptorType,
+            VkShaderStageFlags a_ShaderStageFlags)
+        {
+            assert(a_DescriptorCount > 0 && "Need at least one descriptor per binding");
+            m_Bindings.push_back(VkDescriptorSetLayoutBinding{a_BindingIndex, a_DescriptorType, a_DescriptorCount, a_ShaderStageFlags, nullptr});
+            return *this;
+        }
+    };
+
+    /*
      * Read a file and store the contents in the given output buffer as chars.
      */
     class RenderUtility
     {
     public:
+
+        /*
+         * Destroy allocated objects for a descriptor set.
+         */
+        static void DestroyDescriptorSetContainer(
+            const VkDevice& a_Device,
+            const DescriptorSetContainer& a_Container)
+        {
+            vkDestroyDescriptorPool(a_Device, a_Container.m_Pool, nullptr);
+            vkDestroyDescriptorSetLayout(a_Device, a_Container.m_Layout, nullptr);
+        }
+
+        /*
+         * Create a descriptor set layout, pool and the given amount of sets.
+         * This is not very dynamic but it's easy to quickly set up a few sets.
+         *
+         * Outputs all data to the a_Output object.
+         */
+        static bool CreateDescriptorSetContainer(
+            const VkDevice& a_Device,
+            const DescriptorSetContainerCreateInfo& a_Info,
+            DescriptorSetContainer& a_Output)
+        {
+            assert(!a_Info.m_Bindings.empty() && "At least one binding is required to create descriptor sets!");
+            assert(a_Info.m_NumSets > 0 && "At least one set needs to be created!");
+
+            VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo{};
+            descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            descriptorSetLayoutCreateInfo.bindingCount = static_cast<uint32_t>(a_Info.m_Bindings.size());
+            descriptorSetLayoutCreateInfo.pBindings = a_Info.m_Bindings.data();
+
+            if (vkCreateDescriptorSetLayout(a_Device, &descriptorSetLayoutCreateInfo, nullptr, &a_Output.m_Layout) != VK_SUCCESS)
+            {
+                printf("Could not create descriptor set layout!\n");
+                return false;
+            }
+
+            std::map<VkDescriptorType, uint32_t> descriptorCounts;
+
+            for(auto& binding : a_Info.m_Bindings)
+            {
+                const auto found = descriptorCounts.find(binding.descriptorType);
+                if(found != descriptorCounts.end())
+                {
+                    found->second += binding.descriptorCount;
+                }
+                else
+                {
+                    descriptorCounts.insert({binding.descriptorType, binding.descriptorCount});
+                }
+            }
+
+            std::vector<VkDescriptorPoolSize> poolSizes;
+            poolSizes.reserve(descriptorCounts.size());
+            for(auto& entry : descriptorCounts)
+            {
+                assert(entry.second > 0 && "Need at least one descriptor in a binding.");
+                //For each descriptor type, multiply with the amount of sets to be allocated.
+                poolSizes.push_back(VkDescriptorPoolSize{ entry.first, entry.second * a_Info.m_NumSets });
+            }
+
+            VkDescriptorPoolCreateInfo descriptorPoolInfo{};
+            descriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+            descriptorPoolInfo.maxSets = a_Info.m_NumSets;
+            descriptorPoolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+            descriptorPoolInfo.pPoolSizes = poolSizes.data();
+
+            if (vkCreateDescriptorPool(a_Device, &descriptorPoolInfo, nullptr, &a_Output.m_Pool) != VK_SUCCESS)
+            {
+                printf("Could not create descriptor pool!\n");
+                return false;
+            }
+
+            //Each set in the VkDescriptorSetAllocateInfo points to the same set, but has to be in array format.
+            std::vector layoutVec(a_Info.m_NumSets, a_Output.m_Layout);
+
+            //Allocate sets.
+            VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
+            descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            descriptorSetAllocateInfo.descriptorSetCount = a_Info.m_NumSets;
+            descriptorSetAllocateInfo.descriptorPool = a_Output.m_Pool;
+            descriptorSetAllocateInfo.pSetLayouts = layoutVec.data();
+
+            //Where to store the sets.
+            a_Output.m_Sets.resize(a_Info.m_NumSets);
+
+            if (vkAllocateDescriptorSets(a_Device, &descriptorSetAllocateInfo, a_Output.m_Sets.data()) != VK_SUCCESS)
+            {
+                printf("Could not create descriptor set!\n");
+                return false;
+            }
+
+            return true;
+        }
+
         static bool CreateImage(const VkDevice& a_Device, const VmaAllocator& a_Allocator, const ImageInfo& a_CreateInfo, ImageData& a_Result)
         {
             /*
