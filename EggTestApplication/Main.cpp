@@ -59,9 +59,10 @@ int main()
         }
     	
         //Sphere instances
-        constexpr auto NUM_SPHERE_INSTANCES = 100000;
+        constexpr auto NUM_SPHERE_INSTANCES = 10000;
         std::vector<MeshInstance> meshInstances(NUM_SPHERE_INSTANCES);
         Transform t;
+        t.Translate({ 0.f, 1.5f, 0.f });
         for(int i = 0; i < NUM_SPHERE_INSTANCES; ++i)
         {
             t.Translate(t.GetForward() * 0.2f);
@@ -84,15 +85,41 @@ int main()
         materialInfo.m_MetallicFactor = 0.f;
         materialInfo.m_RoughnessFactor = 1.f;
         auto planeMaterial = renderer->CreateMaterial(materialInfo);
+        materialInfo.m_AlbedoFactor = { 1.f, 1.f, 1.f };
+        materialInfo.m_MetallicFactor = 0.f;
+        materialInfo.m_RoughnessFactor = 1.f;
+        auto lightMaterial = renderer->CreateMaterial(materialInfo);
 
-        //Lights
-        SphereLight sphereLight;
-        sphereLight.SetPosition(0, 10, 0);
-        sphereLight.SetRadiance(10.f, 10.f, 10.f);
-        sphereLight.SetRadius(2.f);
+        //Add lots of little lights that move around.
+        const uint32_t numLights = 200;
+        std::vector<SphereLight> sphereLights;
+        std::vector<glm::vec3> sphereDirections;
+        std::vector<float> sphereSpeeds;
+        for(int i = 0; i < numLights; ++i)
+        {
+            const float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 9.f + 0.01f;
+            const float g = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 9.f + 0.01f;
+            const float b = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 9.f + 0.01f;
+
+            const float x = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 30.f - 15.f;
+            const float z = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 30.f - 15.f;
+
+            const float radius = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 0.2f + 0.05f;
+
+            auto& light = sphereLights.emplace_back();
+            light.SetPosition(x, 0.25f, z);
+            light.SetRadiance(r, g, b);
+            light.SetRadius(radius);
+
+            const float speed = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * + 0.01f;
+            const float directionX = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.f - 1.f;
+            const float directionZ = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.f - 1.f;
+            sphereDirections.push_back(glm::normalize(glm::vec3{ directionX, 0, directionZ }));
+            sphereSpeeds.push_back(speed );
+        }
 
         DirectionalLight dirLight;
-        dirLight.SetRadiance(1.f, 1.f, 1.f);
+        dirLight.SetRadiance(0.3f, 0.3f, 0.3f);
         glm::vec3 dir = glm::normalize(glm::vec3(-1.f, -1.f, -1.f));
         dirLight.SetDirection(dir.x, dir.y, dir.z);
 
@@ -116,11 +143,56 @@ int main()
             std::vector<InstanceDataHandle> instances;
             materials.emplace_back(drawData->AddMaterial(material));
             materials.emplace_back(drawData->AddMaterial(planeMaterial));
+            materials.emplace_back(drawData->AddMaterial(lightMaterial));
             meshes.emplace_back(drawData->AddMesh(sphereMesh));
             meshes.emplace_back(drawData->AddMesh(planeMesh));
 
-            //Add lights to the scene.
-            drawData->AddLight(sphereLight);
+            //Update lights and then add them to the scene.
+            std::vector<InstanceDataHandle> lightSpheres;
+            Transform lightTransform;
+            for(int i = 0; i < static_cast<int>(sphereLights.size()); ++i)
+            {
+                auto& light = sphereLights[i];
+                auto& dir = sphereDirections[i];
+                auto& speed = sphereSpeeds[i];
+
+                //Update position and direction.
+                float posX, posY, posZ;
+                light.GetPosition(posX, posY, posZ);
+                posX += dir.x * speed;
+                posY += dir.y * speed;
+                posZ += dir.z * speed;
+
+                const float directionX = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.f - 1.f;
+                const float directionZ = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.f - 1.f;
+                auto newDir = glm::normalize(glm::vec3(directionX, 0, directionZ));
+
+                float dirChangeSpeed = 0.1f;
+
+                newDir = glm::normalize(dir + (newDir * dirChangeSpeed));
+
+                light.SetPosition(posX, posY, posZ);
+                dir = newDir;
+
+                //Ensure they don't stray too far.
+                float maxDistance = 15.f;
+                const auto lightPos = glm::vec3(posX, posY, posZ);
+                const auto distanceVec = lightPos - glm::vec3(0, posY, 0);
+                const auto distance = glm::length(distanceVec);
+                if (distance > maxDistance)
+                {
+                    dir = -(distanceVec / distance);
+                }
+
+                float radius;
+                light.GetRadius(radius);
+                lightTransform.SetTranslation(lightPos);
+                lightTransform.SetScale(radius);
+                lightSpheres.emplace_back(drawData->AddInstance(lightTransform.GetTransformation(), materials[2], 0));
+
+                drawData->AddLight(light);
+            }
+
             drawData->AddLight(dirLight);
 
             for (auto& instance : planeInstances)
@@ -129,14 +201,16 @@ int main()
             }
             for (auto& instance : meshInstances)
             {
-                instances.emplace_back(drawData->AddInstance(instance.transform, materials[instance.customId], instance.customId));
+                instances.emplace_back(drawData->AddInstance(instance.transform, materials[instance.materialIndex], instance.customId));
             }
 
-            //Creat the draw calls and define the passes for them.
+            //Create the draw calls and define the passes for them.
+            auto lightDrawCall = drawData->AddDrawCall(meshes[0], lightSpheres.data(), static_cast<uint32_t>(lightSpheres.size()));
             auto planeDrawCall = drawData->AddDrawCall(meshes[1], instances.data(), planeInstances.size());
             auto sphereDrawCall = drawData->AddDrawCall(meshes[0], &instances[1], NUM_SPHERE_INSTANCES);
             drawData->AddDeferredShadingDrawPass(&planeDrawCall, 1);
             drawData->AddDeferredShadingDrawPass(&sphereDrawCall, 1);
+            drawData->AddDeferredShadingDrawPass(&lightDrawCall, 1);
 
             //Set the camera.
             drawData->SetCamera(camera);

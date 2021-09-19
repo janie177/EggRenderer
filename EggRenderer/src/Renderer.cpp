@@ -397,6 +397,26 @@ namespace egg
             return true;
         }
 
+        //Only draw when the window is not minimized.
+        const bool minimized = glfwGetWindowAttrib(m_Window, GLFW_ICONIFIED);
+        if (minimized)
+        {
+            return true;
+        }
+
+        /*
+         * Wait for resources to become available.
+         */
+        PROFILING_START(Waiting_For_Frame_Available_Fence)
+
+        //Ensure that command buffer execution is done for this frame by waiting for fence completion.
+        vkWaitForFences(m_RenderData.m_Device, 1, &frameData.m_Fence, true, std::numeric_limits<std::uint32_t>::max());
+
+        //Reset the fence now that it has been signaled.
+        vkResetFences(m_RenderData.m_Device, 1, &frameData.m_Fence);
+
+        PROFILING_END(Waiting_For_Frame_Available_Fence, MILLIS, "")
+
     	/*
     	 * Upload all per-frame data to the GPU.
     	 * Instances, materials, indirection buffer etc.
@@ -447,19 +467,6 @@ namespace egg
             return false;
     	}
         PROFILING_END(Upload_Frame_Data, MILLIS, "")
-
-        //Only draw when the window is not minimized.
-        const bool minimized = glfwGetWindowAttrib(m_Window, GLFW_ICONIFIED);
-        if(minimized)
-        {
-            return true;
-        }
-
-        //Ensure that command buffer execution is done for this frame by waiting for fence completion.
-        vkWaitForFences(m_RenderData.m_Device, 1, &frameData.m_Fence, true, std::numeric_limits<std::uint32_t>::max());
-
-        //Reset the fence now that it has been signaled.
-        vkResetFences(m_RenderData.m_Device, 1, &frameData.m_Fence);
 
         //Prepare the command buffer for rendering
         vkResetCommandPool(m_RenderData.m_Device, frameData.m_CommandPool, 0);

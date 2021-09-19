@@ -99,8 +99,13 @@ void main()
         const float lightArea = 3.1415926536 * lightRadiusSquared;     //Area is equal to the disk projected onto the pixel hemisphere (surface of the circle with the radius of the light).
 
         vec3 pixelToLightDir = lightPosition - position.xyz;
-        const float lDistance = length(pixelToLightDir) - lightRadius;
-        pixelToLightDir /= lDistance;
+        const float toLightCenterDistance = length(pixelToLightDir);
+        const float lDistance = toLightCenterDistance - lightRadius;    //Shave off the area inside the light sphere.
+
+        //Light may be inside the surface, at which point it should not be shaded.
+        if(lDistance <= 0.0) continue;
+
+        pixelToLightDir /= toLightCenterDistance;   //Divide by this length to normalize.
         const float cosI = max(dot(pixelToLightDir, normal), 0.0);
         const float cosO = 1.0;//max(0.0, dot(lightNormal, -pixelToLightDir));  //Since a sphere light always points at a surface.
 
@@ -114,7 +119,7 @@ void main()
         }
 
         //Only shade when the light is visible.
-        if (cosI > 0.f && lDistance > 0.01 && !shadowed)
+        if (cosI > 0.f && !shadowed)
         {
             const vec3 toCameraDir = normalize(pushData.cameraPosition.xyz - position.xyz);
 

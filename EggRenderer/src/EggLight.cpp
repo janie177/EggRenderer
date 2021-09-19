@@ -59,6 +59,7 @@ namespace egg
 
     void SphereLight::SetRadius(float a_Radius)
     {
+        m_Radius = a_Radius;
     }
 
     void SphereLight::GetPosition(float& a_X, float& a_Y, float& a_Z) const
