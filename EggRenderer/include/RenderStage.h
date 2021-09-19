@@ -32,6 +32,7 @@ namespace egg
 	struct DeferredProcessingPushConstants
 	{
 		glm::vec4 m_CameraPosition;
+		glm::uvec4 m_LightCounts;
 	};
 
 	/*

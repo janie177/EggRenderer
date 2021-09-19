@@ -343,6 +343,7 @@ xcopy "$(ProjectDir)shaders\output" "$(SolutionDir)Build\shaders\"  /E /Y /I</Co
   <ItemGroup>
     <ClCompile Include="src\DrawData.cpp" />
     <ClCompile Include="src\DrawDataBuilder.cpp" />
+    <ClCompile Include="src\EggLight.cpp" />
     <ClCompile Include="src\EggRenderer.cpp" />
     <ClCompile Include="src\GpuBuffer.cpp" />
     <ClCompile Include="src\InputQueue.cpp" />

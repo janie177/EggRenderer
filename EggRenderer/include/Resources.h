@@ -135,9 +135,22 @@ namespace egg
 	 */
 	struct PackedLightData
 	{
+		//Light specific data.
 		glm::vec4 m_Data1;
 		glm::vec4 m_Data2;
-		glm::vec4 m_Data3;
+
+		//Shared between all lights.
+		union
+		{
+			glm::ivec4 m_SharedData;
+			struct
+			{
+				int m_ShadowIndex;
+				int m_Unused1;
+				int m_Unused2;
+				int m_Unused3;
+			};
+		};
 	};
 
 	/*

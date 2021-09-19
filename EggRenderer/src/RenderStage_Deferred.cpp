@@ -26,10 +26,13 @@ namespace egg
 
         /*
          * Create descriptor sets for shading data access.
+         * This includes material and light data.
          */
         if(!RenderUtility::CreateDescriptorSetContainer(a_RenderData.m_Device,
             DescriptorSetContainerCreateInfo::Create(a_RenderData.m_Settings.m_SwapBufferCount)
-            .AddBinding(0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT)
+            .AddBinding(0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT)  //Materials
+            .AddBinding(1, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT)  //Area lights
+            .AddBinding(2, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT)  //Directional lights
             ,m_ShadingDescriptors))
         {
             printf("Could not create descriptor sets!\n");
@@ -450,22 +453,29 @@ namespace egg
         vkUpdateDescriptorSets(a_RenderData.m_Device, 2, &setWrite[0], 0, nullptr);
 
 
-        //Make the descriptor set for shading point to the right per frame buffers.
-        //This is used for materials, lights etc.
-        VkDescriptorBufferInfo materialDescriptorBufferInfo{};
-        materialDescriptorBufferInfo.offset = 0;
-        materialDescriptorBufferInfo.range = VK_WHOLE_SIZE;
-        materialDescriptorBufferInfo.buffer = frame.m_UploadData.m_MaterialBuffer.GetBuffer();
-        VkWriteDescriptorSet materialWriteDescriptorSet{};
-        materialWriteDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        materialWriteDescriptorSet.descriptorCount = 1;
-        materialWriteDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        materialWriteDescriptorSet.dstArrayElement = 0;
-        materialWriteDescriptorSet.dstBinding = 0;
-        materialWriteDescriptorSet.dstSet = m_ShadingDescriptors.m_Sets[a_CurrentFrameIndex];
-        materialWriteDescriptorSet.pBufferInfo = &materialDescriptorBufferInfo;
-        vkUpdateDescriptorSets(a_RenderData.m_Device, 1, &materialWriteDescriptorSet, 0, nullptr);
+        const auto numAreaLights = static_cast<uint32_t>(frame.m_DrawData->m_PackedAreaLightData.size());
+        const auto numDirectionalLights = static_cast<uint32_t>(frame.m_DrawData->m_PackedDirectionalLightData.size());
+        const auto areaLightSize = sizeof(PackedLightData) * numAreaLights;
+        const auto directionalLightSize = sizeof(PackedLightData) * numDirectionalLights;
 
+
+        /*
+         * Write to the shading descriptor set.
+         */
+        auto builder = RenderUtility::WriteDescriptors(a_RenderData.m_Device, m_ShadingDescriptors);
+        if(frame.m_DrawData->GetMaterialCount() > 0)
+        {
+            builder.WriteBuffer(a_CurrentFrameIndex, 0, frame.m_UploadData.m_MaterialBuffer.GetBuffer(), 0, VK_WHOLE_SIZE);
+        }
+        if (numAreaLights > 0)
+        {
+            builder.WriteBuffer(a_CurrentFrameIndex, 1, frame.m_UploadData.m_LightsBuffer.GetBuffer(), 0, areaLightSize);
+        }
+        if(numDirectionalLights > 0)
+        {
+            builder.WriteBuffer(a_CurrentFrameIndex, 2, frame.m_UploadData.m_LightsBuffer.GetBuffer(), areaLightSize, directionalLightSize);
+        }
+        builder.Upload();
     	
         /*
          * Rendering the current frame.
@@ -514,7 +524,7 @@ namespace egg
             {
 	            for(int drawCallIndex : drawPass.m_DrawCalls)
 	            {
-                    auto& drawCall = drawData.m_drawCalls[drawCallIndex];
+                    auto& drawCall = drawData.m_DrawCalls[drawCallIndex];
 	            	
                     const auto& mesh = std::static_pointer_cast<Mesh>(drawData.m_Meshes[drawCall.m_MeshIndex]);
                     const auto buffer = mesh->GetBuffer();
@@ -547,6 +557,8 @@ namespace egg
 
         DeferredProcessingPushConstants processingPushData;
         processingPushData.m_CameraPosition = glm::vec4(drawData.m_Camera.GetTransform().GetTranslation(), 0.f);
+        processingPushData.m_LightCounts.x = numAreaLights;
+        processingPushData.m_LightCounts.y = numDirectionalLights;
         vkCmdPushConstants(a_CommandBuffer, m_DeferredProcessingPipelineData.m_PipelineLayout, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT,
             0, sizeof(DeferredProcessingPushConstants), &processingPushData);
 

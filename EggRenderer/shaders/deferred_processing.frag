@@ -13,6 +13,31 @@ layout (std430, binding = 0, set = 1) buffer MaterialData
 
 } materialBuffer;
 
+struct PackedLightData
+{
+    vec4 data0;
+    vec4 data1;
+    ivec4 data2;
+};
+
+layout (std430, binding = 1, set = 1) buffer AreaLights
+{
+    PackedLightData data[];
+
+} areaLightBuffer;
+
+layout (std430, binding = 2, set = 1) buffer DirectionalLights
+{
+    PackedLightData data[];
+
+} directionalLightBuffer;
+
+//Push data
+layout( push_constant ) uniform PushData {
+  vec4 cameraPosition;
+  uvec4 lightCounts;
+} pushData;
+
 layout(location = 5) out vec4 outColor;         //In the framebuffer, the output is the 5th bound buffer.
 
 //Calculate the BRDF.
@@ -22,20 +47,10 @@ float GeometrySchlickGGX(float sNormalToCamDot, float roughness);
 float GeometrySmith(vec3 surfaceNormal, vec3 toCameraDir, vec3 toLightDir, float roughness);
 vec3 FresnelSchlick(float cosTheta, vec3 f0);
 
-//Push data with camera information.
-layout( push_constant ) uniform PushData {
-  vec4 cameraPosition;
-} pushData;
-
 void main() 
 {
     //Temporary light and material values;
     const vec3 ambientLight = {0.07, 0.07, 0.07};
-    const vec3 lightPosition = {0.0, 10.0, 0.0};
-    const vec3 lightRadiance = {50.0, 50.0, 50.0};
-    const float lightRadius = 2.0;
-    const float lightRadiusSquared = lightRadius * lightRadius;
-    const float lightArea = 3.1415926536 * lightRadiusSquared;     //Area is equal to the disk projected onto the pixel hemisphere (surface of the circle with the radius of the light).
 
     //If no hit is present for this pixel, discard.
     float depth = subpassLoad(inDepth).r;
@@ -69,27 +84,86 @@ void main()
     //Light vector that is appended to.
     vec3 finalLightColor = ambientLight;
 
-    //Light calculations
-    vec3 pixelToLightDir = lightPosition - position.xyz;
-    const float lDistance = length(pixelToLightDir) - lightRadius;
-    pixelToLightDir /= lDistance;
-    const float cosI = max(dot(pixelToLightDir, normal), 0.0);
-    const float cosO = 1.0;//max(0.0, dot(lightNormal, -pixelToLightDir));  //Since a sphere light always points at a surface.
+    PackedLightData currentLight;
 
-    //Only shade when the light is visible.
-    if (cosI > 0.f && lDistance > 0.01)
+    //Loop over the area lights.
+    for(uint i = 0; i < pushData.lightCounts.x; ++i)
     {
-        const vec3 toCameraDir = normalize(pushData.cameraPosition.xyz - position.xyz);
+        currentLight = areaLightBuffer.data[i];
 
-        //Geometry term G(x). Solid angle is the light area projected onto the pixel hemisphere.
-        const float solidAngle = (cosO * lightArea) / (lDistance * lDistance);
-        const vec3 brdf = calculateBRDF(pixelToLightDir, toCameraDir, normal, metallicRoughness.x, metallicRoughness.y, albedo);
+        #define lightPosition (currentLight.data0.xyz)
+        #define lightRadius (currentLight.data0.w)
+        #define lightRadiance (currentLight.data1.xyz)
+        #define shadowIndex (currentLight.data2.x)
+        const float lightRadiusSquared = lightRadius * lightRadius;
+        const float lightArea = 3.1415926536 * lightRadiusSquared;     //Area is equal to the disk projected onto the pixel hemisphere (surface of the circle with the radius of the light).
 
-        //The final light transport value.
-        //CosI converts from radiance to irradiance.
-        //brdf is the light transport based on the microfacet normal.
-        //SolidAngle is the surface of the light projected onto the hemisphere of the shaded pixel (scale according to distance and such).
-        finalLightColor += brdf * solidAngle * cosI * lightRadiance;
+        vec3 pixelToLightDir = lightPosition - position.xyz;
+        const float lDistance = length(pixelToLightDir) - lightRadius;
+        pixelToLightDir /= lDistance;
+        const float cosI = max(dot(pixelToLightDir, normal), 0.0);
+        const float cosO = 1.0;//max(0.0, dot(lightNormal, -pixelToLightDir));  //Since a sphere light always points at a surface.
+
+        //When true, this light has a shadow map defined.
+        bool shadowed = false;
+        if(shadowIndex > -1)
+        {
+            //TODO check for shadow.
+            //Do not append light if occluded.
+            shadowed = false;
+        }
+
+        //Only shade when the light is visible.
+        if (cosI > 0.f && lDistance > 0.01 && !shadowed)
+        {
+            const vec3 toCameraDir = normalize(pushData.cameraPosition.xyz - position.xyz);
+
+            //Geometry term G(x). Solid angle is the light area projected onto the pixel hemisphere.
+            const float solidAngle = (cosO * lightArea) / (lDistance * lDistance);
+            const vec3 brdf = calculateBRDF(pixelToLightDir, toCameraDir, normal, metallicRoughness.x, metallicRoughness.y, albedo);
+
+            //The final light transport value.
+            //CosI converts from radiance to irradiance.
+            //brdf is the light transport based on the microfacet normal.
+            //SolidAngle is the surface of the light projected onto the hemisphere of the shaded pixel (scale according to distance and such).
+            finalLightColor += brdf * solidAngle * cosI * lightRadiance;
+        }
+    }
+
+    //Loop over the directional lights.
+    for(uint i = 0; i < pushData.lightCounts.y; ++i)
+    {
+        currentLight = directionalLightBuffer.data[i];
+
+        #define lightDirection (currentLight.data0.xyz)
+        #define lightRadiance (currentLight.data1.xyz)
+        #define shadowIndex (currentLight.data2.x)
+
+        float cosI = dot(-lightDirection, normal);
+
+        //When true, this light has a shadow map defined.
+        bool shadowed = false;
+        if(shadowIndex > -1)
+        {
+            //TODO check for shadow.
+            //Do not append light if occluded.
+            shadowed = false;
+        }
+
+        //Only shade when the light is visible.
+        if (cosI > 0.f && !shadowed)
+        {
+            const vec3 toCameraDir = normalize(pushData.cameraPosition.xyz - position.xyz);
+
+            //Geometry term G(x). Solid angle is the light area projected onto the pixel hemisphere.
+            const vec3 brdf = calculateBRDF(-lightDirection, toCameraDir, normal, metallicRoughness.x, metallicRoughness.y, albedo);
+
+            //The final light transport value.
+            //CosI converts from radiance to irradiance.
+            //brdf is the light transport based on the microfacet normal.
+            //SolidAngle is the surface of the light projected onto the hemisphere of the shaded pixel (scale according to distance and such).
+            finalLightColor += brdf * cosI * lightRadiance;
+        }
     }
 
     //Finally write to the output buffer.

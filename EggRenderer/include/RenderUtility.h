@@ -226,6 +226,9 @@ namespace egg
         std::vector<VkDescriptorSet> m_Sets;
         VkDescriptorSetLayout m_Layout;
         VkDescriptorPool m_Pool;
+
+        //The bindings used for the set layout.
+        std::vector<VkDescriptorSetLayoutBinding> m_Bindings;
     };
 
     /*
@@ -233,32 +236,102 @@ namespace egg
      */
     struct DescriptorSetContainerCreateInfo
     {
-        //The amount of sets to create.
-        uint32_t m_NumSets = 0;
-
-        //A vector of all the bindings the sets will have.
-        std::vector<VkDescriptorSetLayoutBinding> m_Bindings;
-
+        friend class RenderUtility;
+    public:
         /*
          * Helper function to create a new instance.
          */
         static DescriptorSetContainerCreateInfo Create(uint32_t a_NumSets)
         {
-            return DescriptorSetContainerCreateInfo{ a_NumSets };
+            DescriptorSetContainerCreateInfo info;
+            info.m_NumSets = a_NumSets;
+            return info;
         }
 
         /*
          * Helper function to build up bindings.
+         * Optionally provide binding flags.
          */
         DescriptorSetContainerCreateInfo& AddBinding(uint32_t a_BindingIndex,
             uint32_t a_DescriptorCount,
             VkDescriptorType a_DescriptorType,
-            VkShaderStageFlags a_ShaderStageFlags)
+            VkShaderStageFlags a_ShaderStageFlags,
+            VkDescriptorBindingFlags a_BindingFlags = 0
+        )
         {
             assert(a_DescriptorCount > 0 && "Need at least one descriptor per binding");
-            m_Bindings.push_back(VkDescriptorSetLayoutBinding{a_BindingIndex, a_DescriptorType, a_DescriptorCount, a_ShaderStageFlags, nullptr});
+            m_Bindings.push_back(VkDescriptorSetLayoutBinding{ a_BindingIndex, a_DescriptorType, a_DescriptorCount, a_ShaderStageFlags, nullptr });
+            m_BindingFlags.push_back(a_BindingFlags);
             return *this;
         }
+
+    private:
+        //The amount of sets to create.
+        uint32_t m_NumSets = 0;
+
+        //A vector of all the bindings the sets will have.
+        std::vector<VkDescriptorSetLayoutBinding> m_Bindings;
+        std::vector<VkDescriptorBindingFlags> m_BindingFlags;
+    };
+
+    /*
+     * Builder that accumulates writes to a descriptor set and then builds.
+     */
+    class DescriptorSetWriteBuilder
+    {
+    public:
+        DescriptorSetWriteBuilder(const VkDevice& a_Device, const DescriptorSetContainer& a_DescriptorContainer):
+            m_Device(a_Device),
+            m_Container(a_DescriptorContainer)
+        {
+            
+        }
+
+        /*
+         * Write a buffer to a descriptor.
+         * For now does not support arrays.
+         */
+        DescriptorSetWriteBuilder& WriteBuffer(uint32_t a_SetIndex, uint32_t a_Binding, VkBuffer a_Buffer, VkDeviceSize a_Offset, VkDeviceSize a_Size)
+        {
+            assert(a_Binding < m_Container.m_Bindings.size() && "Binding out of bounds.");
+            assert(a_SetIndex < m_Container.m_Sets.size() && "Set index out of bounds.");
+            assert(a_Size > 0 && "Cannot write 0 size to descriptor set.");
+
+            //Add a buffer into object to the end of the list.
+            auto& buffer = m_BufferInfo.emplace_back(VkDescriptorBufferInfo{a_Buffer, a_Offset, a_Size});
+
+            VkWriteDescriptorSet setWrite{};
+            setWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            setWrite.descriptorCount = 1;   //No array support
+            setWrite.descriptorType = m_Container.m_Bindings[a_Binding].descriptorType;
+            setWrite.dstBinding = a_Binding;
+            setWrite.dstArrayElement = 0;   //No array support
+            setWrite.dstSet = m_Container.m_Sets[a_SetIndex];
+            setWrite.pBufferInfo = &buffer; //Normally this is an array, but for now no array support.
+            m_Writes.push_back(setWrite);
+
+            return *this;
+        }
+
+        /*
+         * Update the descriptors in this builder with all the accumulated data.
+         */
+        void Upload()
+        {
+            //Only upload when writes were actually done.
+            if(!m_Writes.empty())
+            {
+                vkUpdateDescriptorSets(m_Device, static_cast<uint32_t>(m_Writes.size()), m_Writes.data(), 0, nullptr);
+                m_Writes.clear();
+                m_BufferInfo.clear();
+            }
+        }
+    private:
+        const VkDevice& m_Device;
+        const DescriptorSetContainer& m_Container;
+
+        std::vector<VkWriteDescriptorSet> m_Writes;
+        std::list<VkDescriptorBufferInfo> m_BufferInfo; //Has to be list to prevent reallocation while building, which would invalidate existing writes.
     };
 
     /*
@@ -267,6 +340,13 @@ namespace egg
     class RenderUtility
     {
     public:
+        /*
+         * Get a tool that allows you to write to a specific descriptor set.
+         */
+        static DescriptorSetWriteBuilder WriteDescriptors(const VkDevice& a_Device, const DescriptorSetContainer& a_DescriptorContainer)
+        {
+            return DescriptorSetWriteBuilder(a_Device, a_DescriptorContainer);
+        }
 
         /*
          * Destroy allocated objects for a descriptor set.
@@ -297,6 +377,14 @@ namespace egg
             descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
             descriptorSetLayoutCreateInfo.bindingCount = static_cast<uint32_t>(a_Info.m_Bindings.size());
             descriptorSetLayoutCreateInfo.pBindings = a_Info.m_Bindings.data();
+
+            //Explicitly specify binding flags for each binding.
+            VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlags{};
+            bindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+            bindingFlags.bindingCount = static_cast<uint32_t>(a_Info.m_BindingFlags.size());
+            bindingFlags.pBindingFlags = a_Info.m_BindingFlags.data();
+
+            descriptorSetLayoutCreateInfo.pNext = &bindingFlags;
 
             if (vkCreateDescriptorSetLayout(a_Device, &descriptorSetLayoutCreateInfo, nullptr, &a_Output.m_Layout) != VK_SUCCESS)
             {
@@ -358,6 +446,9 @@ namespace egg
                 printf("Could not create descriptor set!\n");
                 return false;
             }
+
+            //Copy the bindings over for later runtime reflection of sets.
+            a_Output.m_Bindings = a_Info.m_Bindings;
 
             return true;
         }

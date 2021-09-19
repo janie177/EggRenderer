@@ -1,6 +1,5 @@
 #pragma once
 #include <memory>
-#include <set>
 #include <vector>
 #include <glm/glm/glm.hpp>
 
@@ -8,15 +7,14 @@
 #include "EggMaterial.h"
 #include "EggLight.h"
 #include "EggMesh.h"
-#include "DrawDataBuilder.h"
 
 namespace egg
-{	
+{
 	//Opaque handle types.
 	enum class MaterialHandle : uint32_t {};
 	enum class MeshHandle : uint32_t {};
 	enum class InstanceDataHandle : uint32_t {};
-	enum class LightHandle : uint32_t {};
+	struct LightHandle { LightType m_Type; uint32_t m_Index; };
 	enum class DrawCallHandle : uint32_t {};
 	enum class DrawPassHandle : uint32_t {};
 	
@@ -49,9 +47,18 @@ namespace egg
 	 */
 	struct DrawPass
 	{
-		DrawPassType m_Type;						//The type of draw pass.
-		uint32_t m_LightHandle;					//If this is a shadow generation pass, this is the light it is generated for.
-		std::vector<uint32_t> m_DrawCalls;	//The handles to the draw calls used by this draw pass.
+		DrawPassType m_Type;					//The type of draw pass.
+		std::vector<uint32_t> m_DrawCalls;		//The handles to the draw calls used by this draw pass.
+
+		
+		union
+		{
+			//Data specific to shadow draw passes.
+			struct
+			{
+				LightHandle m_LightHandle;				//If this is a shadow generation pass, this is the light it is generated for.
+			};
+		};
 	};
 
 	/*
@@ -68,7 +75,7 @@ namespace egg
 		 * Set the camera used for this frame.
 		 */
 		virtual void SetCamera(const Camera& a_Camera) = 0;
-
+		
 		/*
 		 * Add a directional light to the scene in this frame.
 		 * Returns a handle to the light.
@@ -80,6 +87,20 @@ namespace egg
 		 * Returns a handle to the light.
 		 */
 		virtual LightHandle AddLight(const SphereLight& a_Light) = 0;
+
+		/*
+         * Add a directional light to the scene in this frame.
+         * Also adds the provided draw calls for shadow map generation.
+         * Returns a handle to the light.
+         */
+		virtual LightHandle AddLightWithShadow(const DirectionalLight& a_Light, const DrawCallHandle* a_ShadowDrawCalls, uint32_t a_NumDrawCalls) = 0;
+
+		/*
+		 * Add a spherical light to the scene in this frame.
+		 * Also adds the provided draw calls for shadow map generation.
+		 * Returns a handle to the light.
+		 */
+		virtual LightHandle AddLightWithShadow(const SphereLight& a_Light, const DrawCallHandle* a_ShadowDrawCalls, uint32_t a_NumDrawCalls) = 0;
 
 		/*
 		 * Add a material to be used during this frame.
@@ -128,18 +149,6 @@ namespace egg
 		 * Returns a handle to the draw pass created.
 		 */
 		virtual DrawPassHandle AddDeferredShadingDrawPass(const DrawCallHandle* a_DrawCalls, uint32_t a_NumDrawCalls) = 0;
-
-		/*
-		 * Add a shadow map generation draw pass.
-		 * All draw calls in this pass will affect the shadows that are cast from light a_LightHandle.
-		 *
-		 * a_DrawCalls is a collection of draw calls that will be used for this pass.
-		 * a_NumDrawCalls is the amount of draw calls in the collection.
-		 * a_LightHandle is the handle of the light that shadows will be generated for.
-		 *
-		 * Returns a handle to the draw pass created.
-		 */
-		virtual DrawPassHandle AddShadowDrawPass(const DrawCallHandle* a_DrawCalls, uint32_t a_NumDrawCalls, const LightHandle a_LightHandle) = 0;
 
 		/*
 		 * Get the amount of instances that have been added for this frame.

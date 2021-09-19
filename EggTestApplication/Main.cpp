@@ -85,6 +85,17 @@ int main()
         materialInfo.m_RoughnessFactor = 1.f;
         auto planeMaterial = renderer->CreateMaterial(materialInfo);
 
+        //Lights
+        SphereLight sphereLight;
+        sphereLight.SetPosition(0, 10, 0);
+        sphereLight.SetRadiance(10.f, 10.f, 10.f);
+        sphereLight.SetRadius(2.f);
+
+        DirectionalLight dirLight;
+        dirLight.SetRadiance(1.f, 1.f, 1.f);
+        glm::vec3 dir = glm::normalize(glm::vec3(-1.f, -1.f, -1.f));
+        dirLight.SetDirection(dir.x, dir.y, dir.z);
+
         //Main loop
         Timer timer;
         static int frameIndex = 0;
@@ -107,6 +118,10 @@ int main()
             materials.emplace_back(drawData->AddMaterial(planeMaterial));
             meshes.emplace_back(drawData->AddMesh(sphereMesh));
             meshes.emplace_back(drawData->AddMesh(planeMesh));
+
+            //Add lights to the scene.
+            drawData->AddLight(sphereLight);
+            drawData->AddLight(dirLight);
 
             for (auto& instance : planeInstances)
             {

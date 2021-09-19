@@ -119,6 +119,9 @@ namespace egg
             frame.m_UploadData.m_MaterialBuffer.Init(
                 GpuBufferSettings{ 0, 16, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT }
             , m_RenderData.m_Device, m_RenderData.m_Allocator);
+            frame.m_UploadData.m_LightsBuffer.Init(
+                GpuBufferSettings{ 0, 16, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT }
+            , m_RenderData.m_Device, m_RenderData.m_Allocator);
         }
 
         //Swapchain used for presenting.
@@ -320,6 +323,7 @@ namespace egg
             frame.m_UploadData.m_IndirectionBuffer.CleanUp();
             frame.m_UploadData.m_InstanceBuffer.CleanUp();
             frame.m_UploadData.m_MaterialBuffer.CleanUp();
+            frame.m_UploadData.m_LightsBuffer.CleanUp();
 
             //Free any data that could be kept alive at this point.
             frame.m_DrawData.reset();
@@ -412,6 +416,26 @@ namespace egg
         if (!uploadData.m_MaterialBuffer.Write(&write, 1, true))
         {
             printf("Could not upload material data!\n");
+            return false;
+        }
+
+        /*
+         * Prepare lights for uploading.
+         *
+         */
+        const auto totalNumLights = (drawData.m_PackedAreaLightData.size() + drawData.m_PackedDirectionalLightData.size());
+        const auto requiredLightSize = totalNumLights * sizeof(PackedLightData);
+
+        //Pack it all into a single continuous piece of memory.
+        std::vector<PackedLightData> allLightData;
+        allLightData.reserve(totalNumLights);
+        allLightData.insert(allLightData.end(), drawData.m_PackedAreaLightData.begin(), drawData.m_PackedAreaLightData.end());
+        allLightData.insert(allLightData.end(), drawData.m_PackedDirectionalLightData.begin(), drawData.m_PackedDirectionalLightData.end());
+
+        write = { allLightData.data(), 0, requiredLightSize };
+        if (!uploadData.m_LightsBuffer.Write(&write, 1, true))
+        {
+            printf("Could not upload light data!\n");
             return false;
         }
 
@@ -1367,12 +1391,27 @@ namespace egg
         /*
          * Create the actual device and specify the queues to use etc.
          */
+
+        //Retrieve physical device features to enable.
+        VkPhysicalDeviceDescriptorIndexingFeatures descriptorFeatures{};
+        descriptorFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+        VkPhysicalDeviceFeatures2 physicalDeviceFeatures{};
+        physicalDeviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        physicalDeviceFeatures.pNext = &descriptorFeatures;
+        vkGetPhysicalDeviceFeatures2(device, &physicalDeviceFeatures);
+
+        if(!descriptorFeatures.descriptorBindingPartiallyBound)
+        {
+            printf("Error! GPU does not support using partial descriptor binding, which is needed at the moment.\n");
+            return false;
+        }
+
         VkDeviceCreateInfo createInfo;
         const std::vector<const char*> swapchainExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
         std::vector<const char*> validationLayers{ "VK_LAYER_KHRONOS_validation" };
         {
             createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-            createInfo.pNext = nullptr;
+            createInfo.pNext = &descriptorFeatures; //Enable all available features!
             createInfo.flags = 0;
 
             //Create the queues defined above.

@@ -42,6 +42,7 @@ namespace egg
 		GpuBuffer m_InstanceBuffer;		//The buffer containing instance data for this frame.
 		GpuBuffer m_IndirectionBuffer;	//Indices into the instance data buffer.
 		GpuBuffer m_MaterialBuffer;		//Buffer containing the materials used for this frame.
+		GpuBuffer m_LightsBuffer;		//Buffer containing all the lights for this frame.
 	};
 
 	/*
