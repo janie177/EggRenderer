@@ -189,7 +189,15 @@ namespace egg
         }
         else
         {
-            glfwSetWindowMonitor(m_Window, nullptr, 50, 50, a_Width, a_Height, videoMode->refreshRate);
+            //First set the window to a non-full-screen position.
+            glfwSetWindowMonitor(m_Window, nullptr, 0, 0, a_Width, a_Height, videoMode->refreshRate);
+
+            //Get the window decorations size (top bar and frame etc in pixels).
+            int left, right, top, bottom;
+            glfwGetWindowFrameSize(m_Window, &left, &top, &right, &bottom);
+
+            //Again set the window at the right offsets. This is required because when switching from full-screen initially, the window frame sizes are all 0.
+            glfwSetWindowMonitor(m_Window, nullptr, left, top, a_Width, a_Height, videoMode->refreshRate);
         }
 	    
 	    /*
@@ -371,6 +379,21 @@ namespace egg
         {
             printf("Renderer not initialized!\n");
             return false;
+        }
+
+        //Close the window when requested.
+        if(glfwWindowShouldClose(m_Window) == GLFW_TRUE)
+        {
+            return false;
+        }
+
+        //Detect if the window has resized by means that did not involve the Renderer API.
+        //Resize the window if that has happened.
+        int32_t width, height;
+        glfwGetWindowSize(m_Window, &width, &height);
+        if(m_RenderData.m_Settings.resolutionX != static_cast<uint32_t>(width) || m_RenderData.m_Settings.resolutionY != static_cast<uint32_t>(height))
+        {
+            Resize(m_RenderData.m_Settings.fullScreen, width, height);
         }
 
         //Nullptr draw data provided. Do nothing.

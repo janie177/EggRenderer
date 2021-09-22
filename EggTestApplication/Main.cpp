@@ -77,9 +77,9 @@ int main()
 
     	//Create materials.
         MaterialCreateInfo materialInfo;
-        materialInfo.m_MetallicFactor = 0.5f;
-        materialInfo.m_RoughnessFactor = 0.3f;
-        materialInfo.m_AlbedoFactor = { 1.f, 0.f, 0.f };
+        materialInfo.m_MetallicFactor = 0.8f;
+        materialInfo.m_RoughnessFactor = 0.16f;
+        materialInfo.m_AlbedoFactor = { 1.f, 1.f, 1.f };
         auto material = renderer->CreateMaterial(materialInfo);
         materialInfo.m_AlbedoFactor = { 1.f, 1.f, 1.f };
         materialInfo.m_MetallicFactor = 0.f;
@@ -91,7 +91,7 @@ int main()
         auto lightMaterial = renderer->CreateMaterial(materialInfo);
 
         //Add lots of little lights that move around.
-        const uint32_t numLights = 200;
+        const uint32_t numLights = 500;
         std::vector<SphereLight> sphereLights;
         std::vector<glm::vec3> sphereDirections;
         std::vector<float> sphereSpeeds;
