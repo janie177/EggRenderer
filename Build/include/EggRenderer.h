@@ -105,6 +105,15 @@ namespace egg
 		//The path where all spir-v shaders are stored.
 		std::string shadersPath = "/shaders/";
 
+		//The amount of allocated bindless texture descriptors.
+		uint32_t maximumBindlessTextures = 300000;
+
+		//The amount of allocated bindless writable texture descriptors.
+		uint32_t maximumBindlessWriteTextures = 300000;
+
+		//The amount of allocated buffer descriptors.
+		uint32_t maximumBindlessBuffers = 300000;
+
 		//How many materials to allow to exist. Allocates all memory up-front.
 		uint32_t maxNumMaterials = 1000000;
 

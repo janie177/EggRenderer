@@ -1,8 +1,10 @@
 #pragma once
+#include <cassert>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 #include <fstream>
+#include <list>
 #include <map>
 
 #include "vk_mem_alloc.h"
@@ -378,6 +380,20 @@ namespace egg
             descriptorSetLayoutCreateInfo.bindingCount = static_cast<uint32_t>(a_Info.m_Bindings.size());
             descriptorSetLayoutCreateInfo.pBindings = a_Info.m_Bindings.data();
 
+            //Pool data here so that I can set flags if needed.
+            VkDescriptorPoolCreateInfo descriptorPoolInfo{};
+
+            //Set the update after bind bit if any of the bindings have it set.
+            for(auto& binding : a_Info.m_BindingFlags)
+            {
+                if((binding & VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT) != 0)
+                {
+                    descriptorPoolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+                    descriptorSetLayoutCreateInfo.flags = VkDescriptorSetLayoutCreateFlagBits::VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+                    break;
+                }
+            }
+
             //Explicitly specify binding flags for each binding.
             VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlags{};
             bindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
@@ -416,7 +432,7 @@ namespace egg
                 poolSizes.push_back(VkDescriptorPoolSize{ entry.first, entry.second * a_Info.m_NumSets });
             }
 
-            VkDescriptorPoolCreateInfo descriptorPoolInfo{};
+
             descriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
             descriptorPoolInfo.maxSets = a_Info.m_NumSets;
             descriptorPoolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());

@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm/glm.hpp>
 
+#include "Bindless.h"
 #include "ConcurrentRegistry.h"
 #include "GpuBuffer.h"
 #include "vk_mem_alloc.h"
@@ -234,6 +235,7 @@ namespace egg
 		 * Main Vulkan objects.
 		 */
 		RenderData m_RenderData;
+		Bindless m_BindlessSystem;
 
 		VkSwapchainKHR m_SwapChain;				//The swapchain for the GLFW window.
 

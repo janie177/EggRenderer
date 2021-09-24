@@ -152,6 +152,17 @@ namespace egg
             return false;
         }
 
+        //Initialize the bindless system
+        BindlessSettings settings;
+        settings.m_NumUavSlots = a_Settings.maximumBindlessWriteTextures;
+        settings.m_NumCbvSlots = a_Settings.maximumBindlessBuffers;
+        settings.m_NumSrvSlots = a_Settings.maximumBindlessTextures;
+        if(!m_BindlessSystem.Init(m_RenderData.m_Device, settings))
+        {
+            printf("Could not init bindless system!\n");
+            return false;
+        }
+
         PROFILING_END(Initialize_Renderer, MILLIS, "")
 	    
         m_Initialized = true;
@@ -311,6 +322,11 @@ namespace egg
         {
             stage->WaitForIdle(m_RenderData);
         }
+
+        /*
+         * Get rid of that pesky bindless system thing.
+         */
+        m_BindlessSystem.CleanUp(m_RenderData.m_Device);
 
 	    /*
 	     * Clean up the render stages.

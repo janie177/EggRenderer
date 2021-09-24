@@ -341,6 +341,7 @@ xcopy "$(ProjectDir)shaders\output" "$(SolutionDir)Build\shaders\"  /E /Y /I</Co
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\Bindless.cpp" />
     <ClCompile Include="src\DrawData.cpp" />
     <ClCompile Include="src\DrawDataBuilder.cpp" />
     <ClCompile Include="src\EggLight.cpp" />
@@ -365,10 +366,12 @@ xcopy "$(ProjectDir)shaders\output" "$(SolutionDir)Build\shaders\"  /E /Y /I</Co
     <ClInclude Include="include\api\EggRenderer.h" />
     <ClInclude Include="include\api\Profiler.h" />
     <ClInclude Include="include\api\Timer.h" />
+    <ClInclude Include="include\Bindless.h" />
     <ClInclude Include="include\ConcurrentRegistry.h" />
     <ClInclude Include="include\api\InputQueue.h" />
     <ClInclude Include="include\DrawData.h" />
     <ClInclude Include="include\GpuBuffer.h" />
+    <ClInclude Include="include\HandleRecycler.h" />
     <ClInclude Include="include\Renderer.h" />
     <ClInclude Include="include\RenderStage.h" />
     <ClInclude Include="include\RenderUtility.h" />
