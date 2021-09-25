@@ -2,9 +2,11 @@
 #include <memory>
 #include <glm/glm/glm.hpp>
 
+#include "Bindless.h"
 #include "vk_mem_alloc.h"
-#include "api/EggMesh.h"
+#include "api/EggStaticMesh.h"
 #include "api/EggMaterial.h"
+#include "api/EggTexture.h"
 
 namespace egg
 {
@@ -21,15 +23,62 @@ namespace egg
 		virtual ~Resource() = default;
 	};
 
+	class Texture : public EggTexture, public Resource
+	{
+	public:
+		Texture(VmaAllocator a_Allocator, VkImageType a_Type, const glm::uvec2& a_Dimensions, VkImage a_Image, VmaAllocation a_Allocation, VkAccessFlags a_AccessFlags, VkImageLayout a_Layout) :
+			m_Allocator(a_Allocator), m_Type(a_Type), m_Dimensions(a_Dimensions), m_Image(a_Image), m_Allocation(a_Allocation), m_Layout(a_Layout), m_AccessFlags(a_AccessFlags)
+		{}
+
+		~Texture() override
+		{
+			vmaDestroyImage(m_Allocator, m_Image, m_Allocation);
+		}
+
+		VkImageType GetType() const { return m_Type; }
+		VkImage GetImage() const { return m_Image; }
+		glm::uvec2 GetDimensions() const { return m_Dimensions; }
+
+		BindlessHandle GetSrvHandle() const { return m_Srv; }
+		BindlessHandle GetUavHandle() const { return m_Uav; }
+
+		VkAccessFlags GetAccessFlags() const { return m_AccessFlags; }
+		VkImageLayout GetLayout() const { return m_Layout; }
+
+		/*
+		 * Set the state that is stored in this Texture object.
+		 * This does NOT actually do any state transitions.
+		 * Manual barrier creation is required.
+		 */
+		void SetState(VkAccessFlags a_AccessFlags, VkImageLayout a_Layout)
+		{
+			m_AccessFlags = a_AccessFlags;
+			m_Layout = a_Layout;
+		}
+
+	private:
+		VmaAllocator m_Allocator;
+		VkImageType m_Type;
+		glm::uvec2 m_Dimensions;
+		VkImage m_Image;
+		VmaAllocation m_Allocation;
+		BindlessHandle m_Uav;	//Every texture has a handle for writing and reading.
+		BindlessHandle m_Srv;
+
+		//State related data.
+		VkImageLayout m_Layout;
+		VkAccessFlags m_AccessFlags;
+	};
+
 	/*
 	 * Mesh class containing a vertex and index buffer.
 	 */
-	class Mesh : public EggMesh, public Resource
+	class StaticMesh : public EggStaticMesh, public Resource
 	{
 	public:
-		Mesh(uint32_t a_UniqueId, VmaAllocator a_Allocator, VmaAllocation a_Allocation, VkBuffer a_Buffer, std::uint64_t a_NumIndices, std::uint64_t a_NumVertices, size_t a_IndexBufferOffset, size_t a_VertexBufferOffset) :
+		StaticMesh(uint32_t a_UniqueId, VmaAllocator a_Allocator, VmaAllocation a_Allocation, VkBuffer a_Buffer, std::uint64_t a_NumIndices, std::uint64_t a_NumVertices, size_t a_IndexBufferOffset, size_t a_VertexBufferOffset) :
 			m_UniqueId(a_UniqueId),
-		    m_Allocator(a_Allocator),
+			m_Allocator(a_Allocator),
 			m_Allocation(a_Allocation),
 			m_Buffer(a_Buffer),
 			m_IndexOffset(a_IndexBufferOffset),
@@ -41,7 +90,7 @@ namespace egg
 
         //Free memory when destructed automatically.
 		//This means all buffers are OWNED by mesh. This only works because meshes are kept in a shared_ptr always.
-		~Mesh()
+		~StaticMesh() override
 		{
 			vmaDestroyBuffer(m_Allocator, m_Buffer, m_Allocation);
 		}

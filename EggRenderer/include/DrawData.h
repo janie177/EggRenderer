@@ -18,7 +18,7 @@ namespace egg
 		LightHandle AddLight(const DirectionalLight& a_Light) override;
 		LightHandle AddLight(const SphereLight& a_Light) override;
 		MaterialHandle AddMaterial(const std::shared_ptr<EggMaterial>& a_Material) override;
-		MeshHandle AddMesh(const std::shared_ptr<EggMesh>& a_Mesh) override;
+		MeshHandle AddMesh(const std::shared_ptr<EggStaticMesh>& a_Mesh) override;
 		InstanceDataHandle AddInstance(const glm::mat4& a_Transform, const MaterialHandle a_MaterialHandle,
 			const uint32_t a_CustomId) override;
 		DrawCallHandle AddDrawCall(MeshHandle a_MeshHandle, const InstanceDataHandle* a_Instances,
@@ -41,7 +41,7 @@ namespace egg
 		std::vector<PackedMaterialData> m_PackedMaterialData;		//All materials used during this frame.
 		std::vector<PackedLightData> m_PackedAreaLightData;			//Lights used during this frame. (area lights).
 		std::vector<PackedLightData> m_PackedDirectionalLightData;	//Lights used during this frame. (directional lights).
-		std::vector<std::shared_ptr<EggMesh>> m_Meshes;				//All meshes used during this frame.
+		std::vector<std::shared_ptr<EggStaticMesh>> m_Meshes;				//All meshes used during this frame.
 		std::vector<PackedInstanceData> m_PackedInstanceData;		//Buffer of instance data, ready for upload.
 		std::vector<uint32_t> m_IndirectionBuffer;					//Indirection buffer, contains indices into instance data.
 		std::vector<DrawCall> m_DrawCalls;							//Draw calls for this frame.

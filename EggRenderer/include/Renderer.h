@@ -127,12 +127,11 @@ namespace egg
 		bool IsFullScreen() const override;
 		bool CleanUp() override;
 		glm::vec2 GetResolution() const override;
-		std::shared_ptr<EggMesh> CreateMesh(const std::vector<Vertex>& a_VertexBuffer,
-			const std::vector<std::uint32_t>& a_IndexBuffer) override;
-		std::shared_ptr<EggMesh> CreateMesh(const MeshCreateInfo& a_MeshCreateInfo) override;
-		std::vector<std::shared_ptr<EggMesh>>
-			CreateMeshes(const std::vector<MeshCreateInfo>& a_MeshCreateInfos) override;
-		std::shared_ptr<EggMesh> CreateMesh(const ShapeCreateInfo& a_ShapeCreateInfo) override;
+		std::shared_ptr<EggTexture> CreateTexture(const TextureCreateInfo& a_TextureCreateInfo) override;
+		std::shared_ptr<EggStaticMesh> CreateMesh(const StaticMeshCreateInfo& a_MeshCreateInfo) override;
+		std::vector<std::shared_ptr<EggStaticMesh>>
+			CreateMeshes(const std::vector<StaticMeshCreateInfo>& a_MeshCreateInfos) override;
+		std::shared_ptr<EggStaticMesh> CreateMesh(const ShapeCreateInfo& a_ShapeCreateInfo) override;
 	    InputData QueryInput() override;
 		std::shared_ptr<EggMaterial> CreateMaterial(const MaterialCreateInfo& a_Info) override;
 		std::unique_ptr<EggDrawData> CreateDrawData() override;
@@ -211,7 +210,6 @@ namespace egg
 			VkDebugUtilsMessageTypeFlagsEXT messageType,
 			const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 			void* pUserData);
-
 	private:
 		/*
 		 * Global renderer tracking stuff.

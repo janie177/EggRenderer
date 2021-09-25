@@ -526,7 +526,7 @@ namespace egg
 	            {
                     auto& drawCall = drawData.m_DrawCalls[drawCallIndex];
 	            	
-                    const auto& mesh = std::static_pointer_cast<Mesh>(drawData.m_Meshes[drawCall.m_MeshIndex]);
+                    const auto& mesh = std::static_pointer_cast<StaticMesh>(drawData.m_Meshes[drawCall.m_MeshIndex]);
                     const auto buffer = mesh->GetBuffer();
                     const auto vertexOffset = mesh->GetVertexBufferOffset();
                     const auto indexBufferOffset = mesh->GetIndexBufferOffset();

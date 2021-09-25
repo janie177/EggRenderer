@@ -625,7 +625,13 @@ namespace egg
         }
     }
 
-    std::vector<std::shared_ptr<EggMesh>> Renderer::CreateMeshes(const std::vector<MeshCreateInfo>& a_MeshCreateInfos)
+    std::shared_ptr<EggTexture> Renderer::CreateTexture(const TextureCreateInfo& a_TextureCreateInfo)
+    {
+        //TODO create shared_ptr<Texture>
+        return nullptr;
+    }
+
+    std::vector<std::shared_ptr<EggStaticMesh>> Renderer::CreateMeshes(const std::vector<StaticMeshCreateInfo>& a_MeshCreateInfos)
     {
         PROFILING_START(Create_Meshes)
 
@@ -635,7 +641,7 @@ namespace egg
         //Wait for previous uploads to end.
         vkWaitForFences(m_RenderData.m_Device, 1, &m_CopyFence, VK_TRUE, std::numeric_limits<uint64_t>::max());
 
-        std::vector<std::shared_ptr<EggMesh>> meshes;
+        std::vector<std::shared_ptr<EggStaticMesh>> meshes;
         meshes.reserve(a_MeshCreateInfos.size());
 
         for (auto& info : a_MeshCreateInfos)
@@ -766,7 +772,7 @@ namespace egg
             vmaDestroyBuffer(m_RenderData.m_Allocator, stagingBuffer, stagingBufferAllocation);
 
             //Finally create a shared pointer and return a copy of it after putting it in the registry.
-            auto ptr = std::make_shared<Mesh>(m_MeshCounter, m_RenderData.m_Allocator, allocation, buffer, info.m_NumIndices, info.m_NumVertices, indexOffset, vertexOffset);
+            auto ptr = std::make_shared<StaticMesh>(m_MeshCounter, m_RenderData.m_Allocator, allocation, buffer, info.m_NumIndices, info.m_NumVertices, indexOffset, vertexOffset);
             ++m_MeshCounter;
             meshes.push_back(ptr);
         }
@@ -776,7 +782,7 @@ namespace egg
         return meshes;
     }
 
-    std::shared_ptr<EggMesh> Renderer::CreateMesh(const ShapeCreateInfo& a_ShapeCreateInfo)
+    std::shared_ptr<EggStaticMesh> Renderer::CreateMesh(const ShapeCreateInfo& a_ShapeCreateInfo)
     {
         std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
@@ -970,23 +976,17 @@ namespace egg
         }
 
         //make the mesh!
-        return CreateMesh(vertices, indices);
+        StaticMeshCreateInfo meshInfo;
+        meshInfo.m_IndexBuffer = indices.data();
+        meshInfo.m_VertexBuffer = vertices.data();
+        meshInfo.m_NumVertices = vertices.size();
+        meshInfo.m_NumIndices = indices.size();
+        return CreateMesh(meshInfo);
     }
 
-    std::shared_ptr<EggMesh> Renderer::CreateMesh(const std::vector<Vertex>& a_VertexBuffer, const std::vector<std::uint32_t>& a_IndexBuffer)
+    std::shared_ptr<EggStaticMesh> Renderer::CreateMesh(const StaticMeshCreateInfo& a_MeshCreateInfo)
     {
-        MeshCreateInfo info = { a_VertexBuffer.data(), a_IndexBuffer.data(), static_cast<uint32_t>(a_IndexBuffer.size()), static_cast<uint32_t>(a_VertexBuffer.size()) };
-        auto vector = CreateMeshes(std::vector<MeshCreateInfo>{info});
-        if(!vector.empty())
-        {
-            return vector[0];
-        }
-        return nullptr;
-    }
-
-    std::shared_ptr<EggMesh> Renderer::CreateMesh(const MeshCreateInfo& a_MeshCreateInfo)
-    {
-        auto vector = CreateMeshes(std::vector<MeshCreateInfo>{a_MeshCreateInfo});
+        auto vector = CreateMeshes(std::vector<StaticMeshCreateInfo>{a_MeshCreateInfo});
         if (!vector.empty())
         {
             return vector[0];

@@ -6,7 +6,7 @@
 #include "Camera.h"
 #include "EggMaterial.h"
 #include "EggLight.h"
-#include "EggMesh.h"
+#include "EggStaticMesh.h"
 
 namespace egg
 {
@@ -112,7 +112,7 @@ namespace egg
 		 * Add a mesh to be used during this frame.
 		 * Returns a handle to the mesh that can be specified when creating draw calls.
 		 */
-		virtual MeshHandle AddMesh(const std::shared_ptr<EggMesh>& a_Mesh) = 0;
+		virtual MeshHandle AddMesh(const std::shared_ptr<EggStaticMesh>& a_Mesh) = 0;
 
 		/*
 		 * Add an instance's data to this frame.

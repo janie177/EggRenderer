@@ -32,7 +32,7 @@ namespace egg
         return static_cast<MaterialHandle>(m_PackedMaterialData.size() - 1);
     }
 
-    MeshHandle DrawData::AddMesh(const std::shared_ptr<EggMesh>& a_Mesh)
+    MeshHandle DrawData::AddMesh(const std::shared_ptr<EggStaticMesh>& a_Mesh)
     {
         m_Meshes.push_back(a_Mesh);
         return static_cast<MeshHandle>(m_Meshes.size() - 1);

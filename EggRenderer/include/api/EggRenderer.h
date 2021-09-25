@@ -7,32 +7,14 @@
 #include "EggDrawData.h"
 #include "Camera.h"
 #include "EggMaterial.h"
-#include "EggMesh.h"
+#include "EggStaticMesh.h"
+#include "EggTexture.h"
 #include "InputQueue.h"
 
 namespace egg
 {
     class EggRenderer;
 	class EggDrawData;
-
-	/*
-     * The vertex format for meshes.
-     */
-	struct Vertex
-	{
-		glm::vec3 position;
-		glm::vec3 normal;
-		glm::vec4 tangent;
-		glm::vec2 uv;
-	};
-
-	struct MeshCreateInfo
-	{
-		const Vertex* m_VertexBuffer = nullptr;
-		const uint32_t* m_IndexBuffer = nullptr;
-		uint32_t m_NumIndices = 0;
-		uint32_t m_NumVertices = 0;
-	};
 
 	/*
      * Shape type for basic mesh creation.
@@ -56,15 +38,6 @@ namespace egg
 	{
 		return static_cast<DebugPrintFlags>(static_cast<uint32_t>(a_Lhs) | static_cast<uint32_t>(a_Rhs));
 	}
-
-	/*
-	 * Format types for the renderer.
-	 */
-	enum class Format
-	{
-		//Format corresponding with the vulkan enum entry.
-		FORMAT_R8_G8_B8_SRGB = 50
-	};
 
 	struct RendererSettings
 	{
@@ -100,7 +73,7 @@ namespace egg
 		glm::vec4 clearColor = glm::vec4(0.f, 0.f, 0.f, 1.f);
 
 		//The format used to output to the screen.
-		Format outputFormat = Format::FORMAT_R8_G8_B8_SRGB;
+		TextureFormat outputFormat = TextureFormat::FORMAT_R8_G8_B8_SRGB;
 
 		//The path where all spir-v shaders are stored.
 		std::string shadersPath = "/shaders/";
@@ -113,12 +86,6 @@ namespace egg
 
 		//The amount of allocated buffer descriptors.
 		uint32_t maximumBindlessBuffers = 300000;
-
-		//How many materials to allow to exist. Allocates all memory up-front.
-		uint32_t maxNumMaterials = 1000000;
-
-		//How often to clean up unused resources in frames.
-		uint32_t cleanUpInterval = 120;
 	};
 
 	/*
@@ -204,20 +171,20 @@ namespace egg
 		virtual glm::vec2 GetResolution() const = 0;
 
 		/*
-		 * Create a mesh resource.
-		 * This uploads the provided buffers to the GPU.
+		 * Create a texture from the provided data.
+		 * When no data is provided, the texture will not be written to.
 		 */
-		virtual std::shared_ptr<EggMesh> CreateMesh(const std::vector<Vertex>& a_VertexBuffer, const std::vector<std::uint32_t>& a_IndexBuffer) = 0;
+		virtual std::shared_ptr<EggTexture> CreateTexture(const TextureCreateInfo& a_TextureCreateInfo) = 0;
 
 		/*
-		 * Create a mesh using raw pointers instead of vectors.
+		 * Create a mesh from the provided data.
 		 */
-		virtual std::shared_ptr<EggMesh> CreateMesh(const MeshCreateInfo& a_MeshCreateInfo) = 0;
+		virtual std::shared_ptr<EggStaticMesh> CreateMesh(const StaticMeshCreateInfo& a_MeshCreateInfo) = 0;
 
 		/*
 		 * Create multiple mesh resources.
 		 */
-		virtual std::vector<std::shared_ptr<EggMesh>> CreateMeshes(const std::vector<MeshCreateInfo>& a_MeshCreateInfos) = 0;
+		virtual std::vector<std::shared_ptr<EggStaticMesh>> CreateMeshes(const std::vector<StaticMeshCreateInfo>& a_MeshCreateInfos) = 0;
 
 		/*
 		 * Create a mesh of a certain type.
@@ -226,7 +193,7 @@ namespace egg
 		 * Note: Unevenly scaling a mesh (x, y, z scale are not equal) will warp normals.
 		 * To e.g. turn a cube into a rectangle, the initial transform can be used to not affect the normals this way.
 		 */
-		virtual std::shared_ptr<EggMesh> CreateMesh(const ShapeCreateInfo& a_ShapeCreateInfo) = 0;
+		virtual std::shared_ptr<EggStaticMesh> CreateMesh(const ShapeCreateInfo& a_ShapeCreateInfo) = 0;
 
 		/*
 		 * Create a new DrawData object.

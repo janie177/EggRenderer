@@ -35,8 +35,8 @@ int main()
 
     if (renderer->Init(settings))
     {
-        std::shared_ptr<EggMesh> sphereMesh;
-        std::shared_ptr<EggMesh> planeMesh;
+        std::shared_ptr<EggStaticMesh> sphereMesh;
+        std::shared_ptr<EggStaticMesh> planeMesh;
         {
             //Create a sphere mesh.
             Transform meshTransform;

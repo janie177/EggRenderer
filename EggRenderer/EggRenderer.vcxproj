@@ -362,8 +362,9 @@ xcopy "$(ProjectDir)shaders\output" "$(SolutionDir)Build\shaders\"  /E /Y /I</Co
     <ClInclude Include="include\api\DrawDataBuilder.h" />
     <ClInclude Include="include\api\EggLight.h" />
     <ClInclude Include="include\api\EggMaterial.h" />
-    <ClInclude Include="include\api\EggMesh.h" />
+    <ClInclude Include="include\api\EggStaticMesh.h" />
     <ClInclude Include="include\api\EggRenderer.h" />
+    <ClInclude Include="include\api\EggTexture.h" />
     <ClInclude Include="include\api\Profiler.h" />
     <ClInclude Include="include\api\Timer.h" />
     <ClInclude Include="include\Bindless.h" />
