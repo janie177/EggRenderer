@@ -627,6 +627,20 @@ namespace egg
 
     std::shared_ptr<EggTexture> Renderer::CreateTexture(const TextureCreateInfo& a_TextureCreateInfo)
     {
+        VkImageCreateInfo imageCreateInfo{};
+        imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageCreateInfo.mipLevels = 1;  //Hard coded 1 mip level.
+        imageCreateInfo.extent = ;
+        imageCreateInfo.flags = ;
+        imageCreateInfo.arrayLayers = 1;
+        imageCreateInfo.imageType = ;
+        imageCreateInfo.initialLayout = ;
+        imageCreateInfo.sharingMode = ;
+        imageCreateInfo.tiling = ;
+        imageCreateInfo.usage = ;
+        imageCreateInfo.samples = ;
+        imageCreateInfo.format = ;
+
         //TODO create shared_ptr<Texture>
         return nullptr;
     }
