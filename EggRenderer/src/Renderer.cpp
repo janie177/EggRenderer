@@ -787,8 +787,6 @@ namespace egg
         std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
 
-        const float halfRadius = a_ShapeCreateInfo.m_Radius / 2.f;
-
         switch (a_ShapeCreateInfo.m_ShapeType)
         {
         case Shape::PLANE:
@@ -796,10 +794,10 @@ namespace egg
                
             vertices =
             {
-                Vertex{{halfRadius, 0.f, halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f, 1.f}, {1.f, 1.f}},
-                Vertex{{-halfRadius, 0.f, -halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f, 1.f}, {0.f, 0.f}},
-                Vertex{{-halfRadius, 0.f, halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f, 1.f}, {0.f, 1.f}},
-                Vertex{{halfRadius, 0.f, -halfRadius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f, 1.f}, {1.f, 0.f}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, 0.f, a_ShapeCreateInfo.m_Radius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f, 1.f}, {1.f, 1.f}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, 0.f, -a_ShapeCreateInfo.m_Radius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f, 1.f}, {0.f, 0.f}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, 0.f, a_ShapeCreateInfo.m_Radius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f, 1.f}, {0.f, 1.f}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, 0.f, -a_ShapeCreateInfo.m_Radius}, {0.f, 1.f, 0.f}, {0.f, 0.f, -1.f, 1.f}, {1.f, 0.f}},
             };
             indices = { 0, 1, 2, 0, 3, 1 };
         }
@@ -808,52 +806,52 @@ namespace egg
         {
             vertices = {
             	//-z
-                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
-                Vertex{{halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
-                Vertex{{-halfRadius, halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, -halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
-                Vertex{{halfRadius, halfRadius, -halfRadius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {0.000000, 0.000000, -1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
 
             	//+x
-            	Vertex{{halfRadius, -halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, -halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
-                Vertex{{halfRadius, halfRadius, -halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
-                Vertex{{halfRadius, -halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, halfRadius, halfRadius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+            	Vertex{{a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
 
             	//+z
-            	Vertex{{halfRadius, -halfRadius, halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
-                Vertex{{-halfRadius, -halfRadius, halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
-                Vertex{{halfRadius, halfRadius, halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, halfRadius, halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, -halfRadius, halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
-                Vertex{{-halfRadius, halfRadius, halfRadius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+            	Vertex{{a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {0.000000, 0.000000, 1.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
 
             	//-x
-            	Vertex{{-halfRadius, -halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
-                Vertex{{-halfRadius, halfRadius, halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
-                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, halfRadius, -halfRadius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+            	Vertex{{-a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {-1.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
 
             	//+y
-            	Vertex{{-halfRadius, halfRadius, -halfRadius}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
-                Vertex{{halfRadius, halfRadius, -halfRadius}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
-                Vertex{{-halfRadius, halfRadius, halfRadius}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, halfRadius, halfRadius}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, halfRadius, -halfRadius}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
-                Vertex{{halfRadius, halfRadius, halfRadius}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+            	Vertex{{-a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {0.000000, 1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
 
             	//-y
-            	Vertex{{-halfRadius, -halfRadius, halfRadius}, {0.000000, -1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, -halfRadius, halfRadius}, {0.000000, -1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {0.000000, -1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
-                Vertex{{-halfRadius, -halfRadius, -halfRadius}, {0.000000, -1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
-                Vertex{{halfRadius, -halfRadius, halfRadius}, {0.000000, -1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
-                Vertex{{halfRadius, -halfRadius, -halfRadius}, {0.000000, -1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 1.000000}}
+            	Vertex{{-a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {0.000000, -1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {0.000000, -1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {0.000000, -1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 0.000000}},
+                Vertex{{-a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {0.000000, -1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {1.000000, 0.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, a_ShapeCreateInfo.m_Radius}, {0.000000, -1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 1.000000}},
+                Vertex{{a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius, -a_ShapeCreateInfo.m_Radius}, {0.000000, -1.000000, 0.000000}, {1.000000, 0.000000, 0.000000, 1.f}, {0.000000, 1.000000}}
             };
 
             for(int i = 0; i < 12; ++i)

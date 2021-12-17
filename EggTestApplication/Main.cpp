@@ -37,6 +37,7 @@ int main()
     {
         std::shared_ptr<EggStaticMesh> sphereMesh;
         std::shared_ptr<EggStaticMesh> planeMesh;
+        std::shared_ptr<EggStaticMesh> cubeMesh;
         {
             //Create a sphere mesh.
             Transform meshTransform;
@@ -57,13 +58,22 @@ int main()
             shapeInfo.m_InitialTransform = meshTransform.GetTransformation();
             planeMesh = renderer->CreateMesh(shapeInfo);
         }
-    	
+        {
+            //Create a cube mesh.
+            Transform meshTransform;
+            ShapeCreateInfo shapeInfo;
+            shapeInfo.m_Radius = 1.f;
+            shapeInfo.m_ShapeType = Shape::CUBE;
+            shapeInfo.m_InitialTransform = meshTransform.GetTransformation();
+            cubeMesh = renderer->CreateMesh(shapeInfo);
+        }
+
         //Sphere instances
         constexpr auto NUM_SPHERE_INSTANCES = 10000;
         std::vector<MeshInstance> meshInstances(NUM_SPHERE_INSTANCES);
         Transform t;
         t.Translate({ 0.f, 1.5f, 0.f });
-        for(int i = 0; i < NUM_SPHERE_INSTANCES; ++i)
+        for (int i = 0; i < NUM_SPHERE_INSTANCES; ++i)
         {
             t.Translate(t.GetForward() * 0.2f);
             t.Translate(t.GetUp() * 0.2f);
@@ -71,9 +81,15 @@ int main()
             meshInstances[i].transform = t.GetTransformation();
         }
 
-    	//Plane instance (default constructed)
+        //Plane instance (default constructed)
         std::vector<MeshInstance> planeInstances;
         planeInstances.resize(1);
+
+        Transform cubeTransform;
+        std::vector<MeshInstance> cubes;
+        cubes.resize(2);
+        cubes[0].materialIndex = 1;
+        cubes[1].materialIndex = 1;
 
     	//Create materials.
         MaterialCreateInfo materialInfo;
@@ -141,11 +157,13 @@ int main()
             std::vector<MeshHandle> meshes;
             std::vector<MaterialHandle> materials;
             std::vector<InstanceDataHandle> instances;
+            std::vector<InstanceDataHandle> cubeInstances;
             materials.emplace_back(drawData->AddMaterial(material));
             materials.emplace_back(drawData->AddMaterial(planeMaterial));
             materials.emplace_back(drawData->AddMaterial(lightMaterial));
             meshes.emplace_back(drawData->AddMesh(sphereMesh));
             meshes.emplace_back(drawData->AddMesh(planeMesh));
+            meshes.emplace_back(drawData->AddMesh(cubeMesh));
 
             //Update lights and then add them to the scene.
             std::vector<InstanceDataHandle> lightSpheres;
@@ -195,6 +213,15 @@ int main()
 
             drawData->AddLight(dirLight);
 
+            static float increment = 0.f;
+            increment += 0.015f;
+            cubeTransform.SetTranslation({ 10, 2, -1.3 });
+            cubeTransform.SetRotation({ 0, 0, 0, 0 });
+            cubes[0].transform = cubeTransform.GetTransformation();
+            cubeTransform.SetTranslation({ 10, 2, 1.3 });
+            cubeTransform.SetRotation({ -0.9589243, 0, 0.2836622, 0 });
+            cubes[1].transform = cubeTransform.GetTransformation();
+
             for (auto& instance : planeInstances)
             {
                 instances.emplace_back(drawData->AddInstance(instance.transform, materials[1], instance.customId));
@@ -203,14 +230,20 @@ int main()
             {
                 instances.emplace_back(drawData->AddInstance(instance.transform, materials[instance.materialIndex], instance.customId));
             }
+            for (auto& instance : cubes)
+            {
+                cubeInstances.emplace_back(drawData->AddInstance(instance.transform, materials[instance.materialIndex], instance.customId));
+            }
 
             //Create the draw calls and define the passes for them.
             auto lightDrawCall = drawData->AddDrawCall(meshes[0], lightSpheres.data(), static_cast<uint32_t>(lightSpheres.size()));
-            auto planeDrawCall = drawData->AddDrawCall(meshes[1], instances.data(), planeInstances.size());
+            auto planeDrawCall = drawData->AddDrawCall(meshes[1], instances.data(), 1);
             auto sphereDrawCall = drawData->AddDrawCall(meshes[0], &instances[1], NUM_SPHERE_INSTANCES);
+            auto cubeDrawCall = drawData->AddDrawCall(meshes[2], &cubeInstances[0], 2);
             drawData->AddDeferredShadingDrawPass(&planeDrawCall, 1);
             drawData->AddDeferredShadingDrawPass(&sphereDrawCall, 1);
             drawData->AddDeferredShadingDrawPass(&lightDrawCall, 1);
+            drawData->AddDeferredShadingDrawPass(&cubeDrawCall, 1);
 
             //Set the camera.
             drawData->SetCamera(camera);
